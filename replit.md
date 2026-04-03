@@ -16,6 +16,23 @@ pnpm workspace monorepo using TypeScript. Each package manages its own dependenc
 - **API codegen**: Orval (from OpenAPI spec)
 - **Build**: esbuild (CJS bundle)
 
+## Artifacts
+
+### Livia Game (mobile)
+- **Type**: Expo mobile app
+- **Path**: `artifacts/mobile/`
+- **Preview**: `/`
+- A side-scrolling platformer game "Livia e il Regno Incantato" (Livia and the Enchanted Kingdom)
+- Character Livia runs, jumps, collects donuts, stomps broccoli enemies
+- Built with React Native WebView embedding the HTML5 Canvas game
+- Game HTML embedded as TypeScript module in `assets/game-html.ts`
+- Web fallback via iframe for browser preview
+
+### API Server
+- **Type**: Express API
+- **Path**: `artifacts/api-server/`
+- **Preview**: `/api`
+
 ## Key Commands
 
 - `pnpm run typecheck` — full typecheck across all packages
