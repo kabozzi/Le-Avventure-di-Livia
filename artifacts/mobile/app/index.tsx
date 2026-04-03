@@ -7,18 +7,17 @@ import GAME_HTML from "../assets/game-html";
 function WebGame() {
   if (Platform.OS === "web") {
     return (
-      <View style={[styles.container, { paddingTop: 67 }]}>
+      <View style={styles.container}>
         <iframe
           srcDoc={GAME_HTML}
           style={{
-            flex: 1,
             border: "none",
             width: "100%",
             height: "100%",
+            display: "block",
             backgroundColor: "#1a0a3e",
-          }}
+          } as React.CSSProperties}
           allow="autoplay"
-          sandbox="allow-scripts allow-same-origin"
         />
       </View>
     );
