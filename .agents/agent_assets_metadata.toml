@@ -1,8 +1,3 @@
 uploads = []
+generated = []
 outputs = []
-
-[[generated]]
-id = "og222wsQew1FsDPUskyjA"
-uri = "file://artifacts/mobile/assets/images/icon.png"
-type = "image"
-title = "generated_image"
