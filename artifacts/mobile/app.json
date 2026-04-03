@@ -1,11 +1,11 @@
 {
   "expo": {
-    "name": "Livia Game",
-    "slug": "mobile",
+    "name": "Le Avventure di Livia",
+    "slug": "leavventuredilivia",
     "version": "1.0.0",
     "orientation": "landscape",
     "icon": "./assets/images/icon.png",
-    "scheme": "mobile",
+    "scheme": "leavventuredilivia",
     "userInterfaceStyle": "dark",
     "newArchEnabled": true,
     "backgroundColor": "#1a0a3e",
@@ -16,13 +16,15 @@
     },
     "ios": {
       "supportsTablet": true,
-      "requiresFullScreen": true
+      "requiresFullScreen": true,
+      "bundleIdentifier": "com.leavventuredilivia.app"
     },
     "android": {
-      "softwareKeyboardLayoutMode": "pan"
+      "softwareKeyboardLayoutMode": "pan",
+      "package": "com.leavventuredilivia.app"
     },
     "web": {
-      "favicon": "./assets/images/icon.png"
+      "favicon": "./assets/images/favicon.png"
     },
     "plugins": [
       [
