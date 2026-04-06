@@ -179,6 +179,36 @@ mp.y = mp.baseY + mp.range/2 * (1 - Math.cos(2*Math.PI*t/mp.period));
 
 **To add more**: just push to `MOVING_PLATS_L2` array. Phase offset staggers multiple platforms.
 
+### Level 3 — Città Frizzante
+
+**Assets** (base64 embedded, pre-scaled to half res):
+- `CITY_STAGE_SRC` — 7277×420 terrain PNG (collision + rendering, 1:1 scale)
+- `CITY_BG_SRC` — 688×384 background PNG (tiled, parallax 0.3x)
+- `CACCA_SRC` — 896×1196 poop enemy sprite sheet
+- `SALI_SRC` — 1810×238 escalator sprite
+- `MUSIC_CITY_SRC` — city music MP3
+
+**Constants**: `LEVEL_W3=7277`, `STAGE_H3=420`, `BG_W3=688`
+
+**Collision**: `isCitySolid(gx, gy)` — same as `isForestSolid` but uses `cityColl` from city stage PNG. Built by `buildCityColl()` on image load.
+
+**Sali (escalators)**: defined in `MOVING_SALI_L3[]`. Direction is UP (not down like L2 platforms):
+```js
+mp.y = mp.baseY - mp.range/2 * (1 - Math.cos(2π*t/period))
+// At t=0: y=baseY (rest, matching PNG). At t=period/2: y=baseY-range (highest).
+```
+Detected via color-scanning of Stage_citta original (14554×841) then halved.
+
+**Cacca sprite layout** (896×1196, 4 cols):
+- `walk`: row 0, y=0, h=390, 4 frames at x=0/224/448/672
+- `attack`: row 1, y=390, h=380, 4 frames
+- `dead`: single frame at x=672, y=770
+- Rendered at 52×68px
+
+**Level flow**: L1→L2→L3→win. `showLevelComplete()` updates overlay text dynamically. `lc-continue` handler uses `currentLevel+1`.
+
+**Music**: `playForest()` branches to `audCity.play()` when `currentLevel===3`.
+
 ### Known Gotchas for Future Levels
 - **`pl.x--` bug**: never use ±1 to undo movement; always use `pl.x -= pl.vx` (full undo)
 - **`!pl.onGround` wall check**: wall check must run always, not just in air
