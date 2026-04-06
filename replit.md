@@ -154,6 +154,31 @@ const WF = {
 7. Draw function: handle dead/attack/walk states; use `ctx.scale(-1,1)` flip for direction
 8. For pixel terrain: reuse `isForestSolid` pattern with new collision map variable
 
+### Moving Platforms (L2)
+
+Defined in `MOVING_PLATS_L2` (array near `RAW_PLATS_L2`). Each entry:
+```js
+{id:'mp1', x:4877, baseY:80, w:122, h:20, range:300, period:480, phase:0, y:80}
+// range=px down from baseY, period=frames (480=8s → 4s down 4s up), phase=frame offset for stagger
+```
+
+**Y update each frame** (in `loop()` after `s.frame++`):
+```js
+mp.prevY = mp.y;
+mp.y = mp.baseY + mp.range/2 * (1 - Math.cos(2*Math.PI*t/mp.period));
+```
+
+**Collision** (runs BEFORE L2 pixel-perfect, after `const feetY=...`):
+- Checks rect overlap + player falling (vy≥0) + previous feet above platform top
+- Snaps player: `pl.y = mp.y - PH; pl.vy=0; pl.onGround=true`
+- Carries player: `pl.y += (mp.y - mp.prevY)` (delta from last frame)
+
+**Drawing** (`drawMovingPlats` called from `renderFrame` after `drawStageL2`):
+- Uses custom `rRect(x,y,w,h,r)` — NOT `ctx.roundRect` (not supported in all WebViews)
+- Wood/log gradient + top highlight + grain lines
+
+**To add more**: just push to `MOVING_PLATS_L2` array. Phase offset staggers multiple platforms.
+
 ### Known Gotchas for Future Levels
 - **`pl.x--` bug**: never use ±1 to undo movement; always use `pl.x -= pl.vx` (full undo)
 - **`!pl.onGround` wall check**: wall check must run always, not just in air
