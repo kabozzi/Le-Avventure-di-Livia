@@ -1,3 +1,8 @@
 uploads = []
 generated = []
-outputs = []
+
+[[outputs]]
+id = "Y0XOkLNX-mNODuwFZKCZR"
+uri = "file://livia_progetto.zip"
+type = "unspecified"
+title = "Livia e il Regno Incantato — Progetto completo"
