@@ -6,3 +6,9 @@ id = "Y0XOkLNX-mNODuwFZKCZR"
 uri = "file://livia_progetto.zip"
 type = "unspecified"
 title = "Livia e il Regno Incantato — Progetto completo"
+
+[[outputs]]
+id = "LKmGYooHIK31xaHM2cnH1"
+uri = "file://livia_itchio.zip"
+type = "unspecified"
+title = "Livia — Zip per itch.io (12.8 MB)"
