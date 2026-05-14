@@ -678,6 +678,7 @@ const sfxDonut=()=>{tone(880,'sine',0.06,0.2);tone(1100,'sine',0.06,0.18,0.07);t
 const sfxStomp=()=>{tone(160,'square',0.16,0.3);tone(100,'square',0.18,0.25,0.05);};
 const sfxHurt =()=>{tone(200,'sawtooth',0.22,0.28);tone(140,'sawtooth',0.18,0.22,0.09);};
 const sfxStep =fr=>{if(fr%20===0)tone(110,'sine',0.04,0.04);};
+const sfxHit  =()=>{tone(300,'square',0.2,0.3);tone(200,'square',0.15,0.25,0.1);};
 
 // ─── HUD ─────────────────────────────────────────────────────────
 let lives=3,donutCount=0,score=0;
@@ -727,6 +728,7 @@ function showLevelComplete(){
   const texts=[
     {title:'Livello 1 completato! ⭐',sub:'Bravissima Livia! Pronta per la foresta? 🌲'},
     {title:'Livello 2 completato! 🌲',sub:'Fantastico! Ora nella città frizzante! 🏙️'},
+    {title:'Livello 3 completato! 🏙️',sub:'Incredibile! Hai completato tutte le avventure di Livia! 🌟'},
   ];
   const t=texts[Math.min(currentLevel-1,texts.length-1)];
   document.querySelector('#overlay-lc .ov-title').textContent=t.title;
@@ -885,7 +887,7 @@ function placeEnemiesEx(platforms){
   return wide.slice(2).filter((_,i)=>i%step===0).map((p,id)=>({
     id,x:p.x+p.w*0.35,y:p.y-PH,w:40,h:PH,
     vx:(optDiff==='high'?1.2+rnd(0.8):0.8+rnd(0.5))*(rnd(1)>0.5?1:-1),
-    sx:p.x+5,range:p.w-10,frame:0,state:'walk',hitTimer:0
+    sx:p.x+5,range:p.w-10,frame:0,state:'walk',hitTimer:0,dir:1
   }));
 }
 
@@ -1321,9 +1323,9 @@ function loop(){
         e.x+=e.vx;e.frame++;
         const ex=e.x,ey=e.y+PH;
         if(isCitySolid(Math.round(ex+20),Math.round(ey+5))||(!isCitySolid(Math.round(ex+20),Math.round(ey+15))&&e.state==='walk')){
-          // Boundary reversal
+          e.vx*=-1;
         }
-        if(e.x<e.sx||e.x+e.w>e.sx+e.range){e.vx*=-1;e.dir=e.vx>0?1:-1;}
+        if(e.x<e.sx||e.x+e.w>e.sx+e.range){e.vx*=-1;}
         e.dir=e.vx>0?1:-1;
         // Player contact
         if(pl.inv<=0&&Math.abs(pl.x+PW/2-(e.x+20))<36&&Math.abs(pl.y+PH/2-(e.y+PH/2))<36){
