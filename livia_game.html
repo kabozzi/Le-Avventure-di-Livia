@@ -690,6 +690,8 @@ function updateHUD(){
 
 // ─── Screen routing ──────────────────────────────────────────────
 let screen='splash', sRef=null, raf=null, menuRaf=null;
+let _lastLoopTime=0;
+const _FRAME_MS=1000/60; // cap a 60fps su monitor ad alta frequenza
 
 function showMenu(){
   screen='menu';
@@ -1143,7 +1145,10 @@ function hurt(){
   s.lives--;lives=s.lives;s.player.inv=130;s.player.vy=-10;sfxHurt();updateHUD();
   if(s.lives<=0){if(raf){cancelAnimationFrame(raf);raf=null;}showEndScreen('dead');s.player=null;}
 }
-function loop(){
+function loop(ts){
+  raf=requestAnimationFrame(loop);
+  if(ts-_lastLoopTime<_FRAME_MS)return;
+  _lastLoopTime=ts;
   try{
   const s=sRef;
   if(s&&s.player){
@@ -1424,7 +1429,6 @@ function loop(){
   }
   renderFrame(sRef);
   }catch(err){console.error('LOOP ERR:',err);}
-  raf=requestAnimationFrame(loop);
 }
 
 // ─── Init game ───────────────────────────────────────────────────
