@@ -9,6 +9,7 @@
   },
   "devDependencies": {
     "@types/node": "catalog:",
+    "pngjs": "^7.0.0",
     "tsx": "catalog:"
   }
 }
