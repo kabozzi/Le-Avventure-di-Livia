@@ -691,7 +691,7 @@ function updateHUD(){
 // ─── Screen routing ──────────────────────────────────────────────
 let screen='splash', sRef=null, raf=null, menuRaf=null;
 let _lastLoopTime=0;
-const _FRAME_MS=1000/60; // cap a 60fps su monitor ad alta frequenza
+const _FRAME_MS=14; // soglia ~14ms: non salta frames a 60Hz, dimezza a 120Hz
 
 function showMenu(){
   screen='menu';
