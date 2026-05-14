@@ -1319,15 +1319,12 @@ function loop(){
           if(e.hitTimer===0)e.state='walk';
           continue;
         }
-        // Move — lookahead (same approach as wolves in L2) to prevent oscillation
-        const nextX=e.x+e.vx;
-        const lookX=Math.round(e.vx>0?nextX+e.w+2:nextX-2);
-        const lookY0=Math.round(e.y+PH-5),lookY1=Math.round(e.y+PH+20);
-        const inBounds=nextX>=e.sx&&nextX+e.w<=e.sx+e.range;
-        let hasGnd=false;
-        for(let ly=lookY0;ly<=lookY1;ly++){if(isCitySolid(lookX,ly)){hasGnd=true;break;}}
-        if(hasGnd&&inBounds){e.x=nextX;}else{e.vx*=-1;}
-        e.frame++;
+        // Move — simple patrol within sx..sx+range boundaries
+        e.x+=e.vx;e.frame++;
+        if(e.x<e.sx||e.x+e.w>e.sx+e.range){
+          e.vx*=-1;
+          e.x=Math.max(e.sx,Math.min(e.x,e.sx+e.range-e.w));
+        }
         e.dir=e.vx>0?1:-1;
         // Player contact
         if(pl.inv<=0&&Math.abs(pl.x+PW/2-(e.x+20))<36&&Math.abs(pl.y+PH/2-(e.y+PH/2))<36){
