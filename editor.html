@@ -318,6 +318,9 @@ function platRect(L, p){            // rettangolo "mondo" di una piattaforma
 }
 function curTiles(){ return cur.tilesArrVar ? (tileSets[cur.tilesArrVar]||[]) : null; }
 function tileImgFor(t){ return cur.tilesImgVars ? images[cur.tilesImgVars[t.img]] : null; }
+function tileOf(p){ const ts=curTiles(); return (ts && p.tile!=null) ? ts[p.tile] : null; }
+function lockAspectFromW(p){ const t=tileOf(p); if(t) p.h=Math.max(8,Math.round(p.w*t.sh/t.sw)); }
+function lockAspectFromH(p){ const t=tileOf(p); if(t) p.w=Math.max(8,Math.round(p.h*t.sw/t.sh)); }
 function goalOf(L){
   const arr = data[L.platsVar];
   if(!arr || !arr.length) return null;
@@ -551,12 +554,11 @@ window.addEventListener('mousemove', e=>{
     o[yk] = sn(Math.max(0, (base[yk]!=null?base[yk]:base.y)+dy));
     if(sel.kind==='mov' && yk==='baseY') o.y = o.baseY;
   } else if(dragMode==='resizeW'){
-    o.w = sn(Math.max(8, base.w+dx));
+    o.w = sn(Math.max(8, base.w+dx)); lockAspectFromW(o);   // se ha un tile, mantiene le proporzioni
   } else if(dragMode==='resizeH'){
-    o.h = sn(Math.max(8, baseH + dy));     // imposta altezza esplicita => piattaforma flottante
+    o.h = sn(Math.max(8, baseH + dy)); lockAspectFromH(o);
   } else if(dragMode==='resizeWH'){
-    o.w = sn(Math.max(8, base.w+dx));
-    o.h = sn(Math.max(8, baseH + dy));
+    o.w = sn(Math.max(8, base.w+dx)); o.h = sn(Math.max(8, baseH + dy)); lockAspectFromW(o);
   }
   refreshSel(); draw();
 });
@@ -614,7 +616,7 @@ function buildTilePicker(){
       const s=Math.min(c.width/t.sw, c.height/t.sh), dw=t.sw*s, dh=t.sh*s;
       cx.drawImage(tImg,t.sx,t.sy,t.sw,t.sh,(c.width-dw)/2,(c.height-dh)/2,dw,dh);
     }
-    c.onclick=()=>{ o.tile=idx; refreshSel(); draw(); };
+    c.onclick=()=>{ o.tile=idx; lockAspectFromW(o); refreshSel(); draw(); };
     grid.appendChild(c);
   });
 }
@@ -672,9 +674,16 @@ $('netCreate').onclick = async ()=>{
 /* ════════ aggiungi / elimina / duplica ════════ */
 $('btnAdd').onclick = ()=>{
   const arr = data[cur.platsVar];
-  const x = Math.round(camX + (cv.width/scale)/2 - 60);
-  // nuova piattaforma FLOTTANTE (altezza propria) al centro vista: poi spostabile/ridimensionabile ovunque
-  const o = {x, y:Math.round(cur.stageH*0.45), w:120, h:40};
+  const x = Math.round(camX + (cv.width/scale)/2 - 90);
+  const tiles = curTiles();
+  let o;
+  if(tiles && tiles.length){
+    const t=tiles[0], w=180;            // piattaforma GRAFICA: il disegno è la piattaforma (proporzioni bloccate)
+    o={x, y:Math.round(cur.stageH*0.4), w, h:Math.round(w*t.sh/t.sw), tile:0};
+    setStatus('Piattaforma grafica aggiunta — scegli il disegno dalla palette a destra; trascina per spostarla/ridimensionarla.');
+  } else {
+    o={x, y:Math.round(cur.stageH*0.45), w:120, h:40};
+  }
   arr.push(o); sel={kind:'plat',idx:arr.length-1}; refreshSel(); draw();
 };
 $('btnAddMov').onclick = ()=>{
