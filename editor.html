@@ -88,6 +88,12 @@
       </div>
     </div>
 
+    <div id="tileBox" style="display:none">
+      <h2>Grafica piattaforma (tile)</h2>
+      <div class="hint" style="margin-bottom:6px">Clicca un disegno per assegnarlo alla piattaforma selezionata.</div>
+      <div id="tileGrid" style="display:grid;grid-template-columns:repeat(4,1fr);gap:5px"></div>
+    </div>
+
     <h2>Comandi</h2>
     <div class="hint">
       Trascina il corpo per <b>spostare</b> · trascina il bordo destro/inferiore per <b>ridimensionare</b> · trascina su area vuota per <b>scorrere</b> · rotella = <b>pan</b> · <kbd>Canc</kbd> elimina · <kbd>D</kbd> duplica.
@@ -141,7 +147,8 @@ const LEVELS = [
   { id:4, name:'Livello 4 — Sottomarino', levelW:7277, stageH:420,
     platsVar:'RAW_PLATS_L4', fields:['x','y','w'], floorH:true, movVar:null,
     bgVar:'UNDERWATER_BG_SRC', bgW:null, stageVar:null,
-    stageDraw:null, collision:'rect' },
+    stageDraw:null, collision:'rect',
+    tilesArrVar:'L4_TILES', tilesImgVars:['TILES_ACQUA1_SRC','TILES_ACQUA2_SRC'] },
 ];
 
 /* ─── stato ─── */
@@ -149,6 +156,7 @@ let gameSrc = '';            // testo completo di livia_game.html
 let fileHandle = null;       // handle per salvataggio diretto (File System Access API)
 const data = {};             // platsVar -> array oggetti ; movVar -> array oggetti
 const images = {};           // varName -> HTMLImageElement
+const tileSets = {};         // tilesArrVar -> array {img,sx,sy,sw,sh}  (es. L4_TILES)
 let cur = null;              // livello corrente (voce di LEVELS)
 let camX = 0, scale = 1;
 let sel = null;              // {arr, idx, kind:'plat'|'mov'}
@@ -202,6 +210,8 @@ function parseAll(){
     if(L.movVar)   data[L.movVar]   = extractArray(L.movVar)   || [];
     loadImageVar(L.bgVar);
     loadImageVar(L.stageVar);
+    if(L.tilesArrVar) tileSets[L.tilesArrVar] = extractArray(L.tilesArrVar) || [];
+    if(L.tilesImgVars) L.tilesImgVars.forEach(loadImageVar);
   }
 }
 
@@ -216,6 +226,8 @@ function platRect(L, p){            // rettangolo "mondo" di una piattaforma
   const h = (p.h != null) ? p.h : (L.floorH ? (L.stageH - p.y) : 20);
   return {x:p.x, y:p.y, w:p.w, h};
 }
+function curTiles(){ return cur.tilesArrVar ? (tileSets[cur.tilesArrVar]||[]) : null; }
+function tileImgFor(t){ return cur.tilesImgVars ? images[cur.tilesImgVars[t.img]] : null; }
 function goalOf(L){
   const arr = data[L.platsVar];
   if(!arr || !arr.length) return null;
@@ -265,14 +277,24 @@ function draw(){
 
   // piattaforme solide
   const arr = data[L.platsVar] || [];
+  const tiles = curTiles();
   arr.forEach((p,i)=>{
     const r = platRect(L,p);
     const isSel = sel && sel.kind==='plat' && sel.idx===i;
     const float = (p.h != null);    // piattaforma flottante (altezza propria)
-    drawBox(r, isSel ? 'rgba(61,169,252,.5)' : (float?'rgba(120,220,150,.55)':'rgba(70,196,110,.40)'),
+    // anteprima del tile grafico (come in gioco) se il livello li usa
+    if(tiles && tiles.length){
+      const t = tiles[(p.tile!=null?p.tile:i)%tiles.length];
+      const tImg = tileImgFor(t);
+      if(tImg && tImg.complete && tImg.naturalWidth){
+        const sc = r.w / t.sw, dh = t.sh*sc;
+        ctx.drawImage(tImg, t.sx,t.sy,t.sw,t.sh, W2S_X(r.x), W2S_Y(r.y), r.w*scale, dh*scale);
+      }
+    }
+    drawBox(r, isSel ? 'rgba(61,169,252,.35)' : (float?'rgba(120,220,150,.30)':'rgba(70,196,110,.22)'),
                isSel ? 'rgba(61,169,252,1)'   : 'rgba(70,196,110,1)', isSel);
     if(scale>0.22){ ctx.fillStyle='rgba(255,255,255,.9)'; ctx.font='10px monospace';
-      ctx.fillText('#'+i, W2S_X(r.x)+3, W2S_Y(r.y)+12); }
+      ctx.fillText('#'+i + (p.tile!=null?' T'+p.tile:''), W2S_X(r.x)+3, W2S_Y(r.y)+12); }
   });
 
   // piattaforme mobili
@@ -441,6 +463,28 @@ function refreshSel(){
   $('fH').value = (o.h!=null?o.h:(cur.floorH? (cur.stageH-o.y):20));
   $('rowRange').style.display = (sel.kind==='mov' && o.range!=null)?'flex':'none';
   if(o.range!=null) $('fRange').value = o.range;
+  buildTilePicker();
+}
+function buildTilePicker(){
+  const tiles = curTiles();
+  const o = selObj();
+  const show = tiles && tiles.length && o && sel.kind==='plat';
+  $('tileBox').style.display = show ? 'block' : 'none';
+  if(!show) return;
+  const grid = $('tileGrid'); grid.innerHTML='';
+  tiles.forEach((t,idx)=>{
+    const c = document.createElement('canvas'); c.width=58; c.height=44;
+    c.style.cssText='width:100%;height:auto;border-radius:5px;cursor:pointer;background:#0a0e13;border:2px solid '+
+      ((o.tile!=null?o.tile:-1)===idx?'var(--accent)':'transparent');
+    c.title='Tile '+idx;
+    const cx=c.getContext('2d'); const tImg=tileImgFor(t);
+    if(tImg && tImg.complete && tImg.naturalWidth){
+      const s=Math.min(c.width/t.sw, c.height/t.sh), dw=t.sw*s, dh=t.sh*s;
+      cx.drawImage(tImg,t.sx,t.sy,t.sw,t.sh,(c.width-dw)/2,(c.height-dh)/2,dw,dh);
+    }
+    c.onclick=()=>{ o.tile=idx; refreshSel(); draw(); };
+    grid.appendChild(c);
+  });
 }
 ['fX','fY','fW','fH','fRange'].forEach(id=>{
   $(id).addEventListener('input', ()=>{
