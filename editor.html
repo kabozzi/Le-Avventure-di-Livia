@@ -1,0 +1,611 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Editor Livelli — Le Avventure di Livia</title>
+<style>
+  :root{ --bg:#10151c; --panel:#1b232e; --panel2:#232d3a; --line:#33414f; --txt:#e6edf3; --muted:#8aa0b3; --accent:#3da9fc; --warn:#f5a623; --ok:#46c46e; --del:#e25555; }
+  *{box-sizing:border-box;}
+  body{margin:0;font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;background:var(--bg);color:var(--txt);font-size:14px;}
+  header{display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:8px 12px;background:var(--panel);border-bottom:1px solid var(--line);position:sticky;top:0;z-index:10;}
+  header h1{font-size:15px;margin:0 12px 0 0;font-weight:600;}
+  select,button,input{font:inherit;color:var(--txt);background:var(--panel2);border:1px solid var(--line);border-radius:6px;padding:5px 9px;}
+  button{cursor:pointer;}
+  button:hover{border-color:var(--accent);}
+  button.primary{background:var(--accent);color:#06121f;border-color:var(--accent);font-weight:600;}
+  button.ok{background:var(--ok);color:#06210f;border-color:var(--ok);font-weight:600;}
+  button.del{background:var(--del);color:#fff;border-color:var(--del);}
+  .sep{width:1px;height:24px;background:var(--line);margin:0 4px;}
+  .grow{flex:1;}
+  #status{color:var(--muted);font-size:12.5px;min-width:120px;}
+  main{display:flex;height:calc(100vh - 50px);}
+  #stage{flex:1;position:relative;overflow:hidden;background:#0a0e13;}
+  canvas{display:block;background:#0a0e13;cursor:crosshair;}
+  aside{width:300px;background:var(--panel);border-left:1px solid var(--line);padding:12px;overflow:auto;}
+  aside h2{font-size:12px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);margin:14px 0 6px;}
+  aside h2:first-child{margin-top:0;}
+  .row{display:flex;gap:6px;align-items:center;margin:5px 0;}
+  .row label{width:46px;color:var(--muted);}
+  .row input{width:100%;}
+  .note{font-size:12px;line-height:1.5;color:var(--muted);background:var(--panel2);border:1px solid var(--line);border-left:3px solid var(--warn);border-radius:6px;padding:8px 10px;}
+  .note.rect{border-left-color:var(--ok);}
+  textarea{width:100%;height:150px;background:#0a0e13;color:#9fe0a0;border:1px solid var(--line);border-radius:6px;padding:8px;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:11.5px;white-space:pre;resize:vertical;}
+  .legend{display:flex;gap:14px;flex-wrap:wrap;font-size:12px;color:var(--muted);}
+  .legend span{display:inline-flex;align-items:center;gap:5px;}
+  .sw{width:14px;height:14px;border-radius:3px;display:inline-block;border:1px solid rgba(255,255,255,.3);}
+  .hint{font-size:12px;color:var(--muted);line-height:1.6;}
+  kbd{background:var(--panel2);border:1px solid var(--line);border-bottom-width:2px;border-radius:4px;padding:1px 6px;font-family:inherit;font-size:11px;}
+  #overlay{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;background:rgba(10,14,19,.85);text-align:center;padding:30px;z-index:5;}
+  #overlay div{max-width:520px;line-height:1.6;}
+</style>
+</head>
+<body>
+<header>
+  <h1>🛠️ Editor Livelli</h1>
+  <select id="levelSel"></select>
+  <div class="sep"></div>
+  <button id="btnAdd">+ Piattaforma</button>
+  <button id="btnAddMov" title="Aggiunge una piattaforma mobile">+ Mobile</button>
+  <button id="btnDel" class="del">Elimina</button>
+  <div class="sep"></div>
+  <button id="btnZoomOut">−</button>
+  <button id="btnZoomFit">Adatta</button>
+  <button id="btnZoomIn">+</button>
+  <label class="hint"><input type="checkbox" id="snap" style="width:auto"> Griglia 5px</label>
+  <div class="grow"></div>
+  <span id="status">Caricamento…</span>
+  <div class="sep"></div>
+  <button id="btnOpen" title="Apri il file per poterlo salvare direttamente">Apri file…</button>
+  <button id="btnSave" class="ok">💾 Salva</button>
+  <button id="btnDownload">⬇︎ Scarica</button>
+</header>
+<main>
+  <div id="stage">
+    <canvas id="cv"></canvas>
+    <div id="overlay"><div id="ovText">Caricamento di <code>livia_game.html</code>…</div></div>
+  </div>
+  <aside>
+    <h2>Livello</h2>
+    <div id="lvlNote" class="note"></div>
+    <div class="legend" style="margin-top:8px">
+      <span><i class="sw" style="background:rgba(70,196,110,.55)"></i>Piattaforma solida</span>
+      <span><i class="sw" style="background:rgba(245,166,35,.6)"></i>Piattaforma mobile</span>
+      <span><i class="sw" style="background:rgba(61,169,252,.7)"></i>Selezionata</span>
+      <span><i class="sw" style="background:rgba(255,215,0,.8)"></i>Bandierina (auto)</span>
+    </div>
+
+    <h2>Elemento selezionato</h2>
+    <div id="selBox">
+      <div class="hint" id="selEmpty">Nessuna selezione. Clicca una piattaforma sul canvas.</div>
+      <div id="selFields" style="display:none">
+        <div class="row"><label>X</label><input type="number" id="fX"></div>
+        <div class="row"><label>Y</label><input type="number" id="fY"></div>
+        <div class="row"><label>W</label><input type="number" id="fW"></div>
+        <div class="row" id="rowH"><label>H</label><input type="number" id="fH"></div>
+        <div class="row" id="rowRange"><label>Salita</label><input type="number" id="fRange"></div>
+        <button id="fDel" class="del" style="width:100%;margin-top:10px">🗑 Elimina questo elemento</button>
+      </div>
+    </div>
+
+    <h2>Comandi</h2>
+    <div class="hint">
+      Trascina il corpo per <b>spostare</b> · trascina il bordo destro/inferiore per <b>ridimensionare</b> · trascina su area vuota per <b>scorrere</b> · rotella = <b>pan</b> · <kbd>Canc</kbd> elimina · <kbd>D</kbd> duplica.
+    </div>
+
+    <h2>Esporta (anteprima)</h2>
+    <textarea id="export" spellcheck="false" readonly></textarea>
+    <div class="hint" style="margin-top:6px">
+      <b>Salva</b> riscrive direttamente <code>livia_game.html</code> (serve “Apri file…” una volta, browser Chrome/Edge).
+      In alternativa <b>Scarica</b> il file aggiornato e sostituiscilo a mano.
+    </div>
+  </aside>
+</main>
+
+<script>
+"use strict";
+
+/* ════════════════════════════════════════════════════════════════════════
+   REGISTRO LIVELLI  ◀── PER AGGIUNGERE UN LIVELLO FUTURO, AGGIUNGI UNA VOCE
+   ──────────────────────────────────────────────────────────────────────
+   campi:
+     name        etichetta nel menu
+     levelW,stageH  dimensioni mondo
+     platsVar    nome della costante array piattaforme in livia_game.html
+     fields      proprietà modificabili di ogni piattaforma  (['x','y','w'] o +['h'])
+     floorH      true = altezza piattaforma = stageH - y (si estende al fondo)
+     movVar      (opz.) nome array piattaforme mobili
+     bgVar       costante base64 sfondo affiancato
+     bgW         larghezza tile sfondo
+     stageVar    (opz.) costante base64 immagine-stage (terreno)
+     stageDraw   come disegnare lo stage: {x,y,w,h} oppure 'naturalBottom' oppure null
+     collision   'rect'  = collisioni dai rettangoli (modificabili al 100%)
+                 'bitmap'= terreno dentro al PNG (rettangoli = solo riferimento/nemici)
+   ════════════════════════════════════════════════════════════════════════ */
+const LEVELS = [
+  { id:1, name:'Livello 1 — Broccoli', levelW:5856, stageH:422,
+    platsVar:'RAW_PLATS', fields:['x','y','w','h'], floorH:false, movVar:null,
+    bgVar:'BG_SRC', bgW:1520, stageVar:'STAGE_SRC',
+    stageDraw:{x:0,y:0,w:5856,h:422}, collision:'rect' },
+
+  { id:2, name:'Livello 2 — Foresta', levelW:6000, stageH:370,
+    platsVar:'RAW_PLATS_L2', fields:['x','y','w'], floorH:true, movVar:'MOVING_PLATS_L2',
+    bgVar:'FOREST_BG_SRC', bgW:1200, stageVar:'FOREST_STAGE_SRC',
+    stageDraw:{x:0,y:50,w:6000,h:370}, collision:'bitmap' },
+
+  { id:3, name:'Livello 3 — Città', levelW:7277, stageH:420,
+    platsVar:'RAW_PLATS_L3', fields:['x','y','w'], floorH:true, movVar:'MOVING_SALI_L3',
+    bgVar:'CITY_BG_SRC', bgW:688, stageVar:'CITY_STAGE_SRC',
+    stageDraw:'naturalBottom', collision:'bitmap' },
+
+  { id:4, name:'Livello 4 — Sottomarino', levelW:7277, stageH:420,
+    platsVar:'RAW_PLATS_L4', fields:['x','y','w'], floorH:true, movVar:null,
+    bgVar:'UNDERWATER_BG_SRC', bgW:null, stageVar:null,
+    stageDraw:null, collision:'rect' },
+];
+
+/* ─── stato ─── */
+let gameSrc = '';            // testo completo di livia_game.html
+let fileHandle = null;       // handle per salvataggio diretto (File System Access API)
+const data = {};             // platsVar -> array oggetti ; movVar -> array oggetti
+const images = {};           // varName -> HTMLImageElement
+let cur = null;              // livello corrente (voce di LEVELS)
+let camX = 0, scale = 1;
+let sel = null;              // {arr, idx, kind:'plat'|'mov'}
+let dragMode = null;         // 'move'|'resizeW'|'resizeH'|'resizeWH'|'pan'
+let dragStart = null;
+
+const cv = document.getElementById('cv');
+const ctx = cv.getContext('2d');
+const $ = id => document.getElementById(id);
+
+/* ════════ PARSING di livia_game.html ════════ */
+function extractArray(name){
+  const re = new RegExp('const\\s+'+name+'\\s*=\\s*(\\[[\\s\\S]*?\\])\\s*;');
+  const m = gameSrc.match(re);
+  if(!m) return null;
+  try { return (new Function('return '+m[1]))(); }
+  catch(e){ console.error('parse array',name,e); return null; }
+}
+function extractString(name){
+  // Gestisce sia stringhe singole sia concatenazioni: const X="a"+"b"+ ... ;
+  // (i data-URI base64 non contengono virgolette o backslash, quindi niente escape)
+  const start = gameSrc.search(new RegExp('const\\s+'+name+'\\s*='));
+  if(start < 0) return null;
+  let i = gameSrc.indexOf('=', start) + 1;
+  const n = gameSrc.length;
+  let out = '', got = false;
+  while(i < n){
+    while(i < n && /[\s+]/.test(gameSrc[i])) i++;        // salta spazi e '+'
+    const q = gameSrc[i];
+    if(q === '"' || q === "'" || q === '`'){
+      let j = i + 1;
+      while(j < n && gameSrc[j] !== q) j++;               // fino alla chiusura
+      out += gameSrc.slice(i + 1, j); got = true; i = j + 1;
+    } else break;                                          // ';' o altro => fine
+  }
+  return got ? out : null;
+}
+function loadImageVar(name){
+  if(!name || images[name]) return;
+  const src = extractString(name);
+  if(!src) return;
+  const img = new Image();
+  img.onload = draw;
+  img.src = src.startsWith('data:') ? src : src;
+  images[name] = img;
+}
+
+function parseAll(){
+  for(const L of LEVELS){
+    if(L.platsVar) data[L.platsVar] = extractArray(L.platsVar) || [];
+    if(L.movVar)   data[L.movVar]   = extractArray(L.movVar)   || [];
+    loadImageVar(L.bgVar);
+    loadImageVar(L.stageVar);
+  }
+}
+
+/* ════════ trasformazioni coord ════════ */
+const W2S_X = wx => (wx - camX) * scale;
+const W2S_Y = wy => wy * scale;
+const S2W_X = sx => sx / scale + camX;
+const S2W_Y = sy => sy / scale;
+
+function platRect(L, p){            // rettangolo "mondo" di una piattaforma
+  // h esplicito => piattaforma flottante; altrimenti, nei livelli "floorH", scende fino al fondo
+  const h = (p.h != null) ? p.h : (L.floorH ? (L.stageH - p.y) : 20);
+  return {x:p.x, y:p.y, w:p.w, h};
+}
+function goalOf(L){
+  const arr = data[L.platsVar];
+  if(!arr || !arr.length) return null;
+  let lp = arr[0];
+  for(const p of arr) if(p.x > lp.x) lp = p;
+  return {x:lp.x, y:lp.y-24, w:lp.w, h:24};
+}
+
+/* ════════ rendering ════════ */
+function resize(){
+  const r = $('stage').getBoundingClientRect();
+  cv.width = r.width; cv.height = r.height;
+  draw();
+}
+function draw(){
+  if(!cur) return;
+  const L = cur;
+  ctx.clearRect(0,0,cv.width,cv.height);
+
+  // sfondo affiancato
+  const bg = images[L.bgVar];
+  if(bg && bg.complete && bg.naturalWidth){
+    const bw = (L.bgW || bg.naturalWidth) * scale;
+    const bh = L.stageH * scale;
+    let start = -((camX*scale) % bw);
+    if(start>0) start -= bw;
+    for(let x=start; x<cv.width; x+=bw) ctx.drawImage(bg, x, 0, bw, bh);
+  } else {
+    ctx.fillStyle = '#0a2030'; ctx.fillRect(0,0,cv.width, L.stageH*scale);
+  }
+
+  // immagine-stage (terreno)
+  const st = images[L.stageVar];
+  if(st && st.complete && st.naturalWidth && L.stageDraw){
+    if(L.stageDraw === 'naturalBottom'){
+      const sw = st.naturalWidth, sh = st.naturalHeight;
+      ctx.drawImage(st, W2S_X(0), W2S_Y(L.stageH - sh), sw*scale, sh*scale);
+    } else {
+      const d = L.stageDraw;
+      ctx.drawImage(st, W2S_X(d.x), W2S_Y(d.y), d.w*scale, d.h*scale);
+    }
+  }
+
+  // linea fondo livello
+  ctx.strokeStyle = 'rgba(255,255,255,.15)';
+  ctx.beginPath(); ctx.moveTo(0, W2S_Y(L.stageH)); ctx.lineTo(cv.width, W2S_Y(L.stageH)); ctx.stroke();
+
+  // piattaforme solide
+  const arr = data[L.platsVar] || [];
+  arr.forEach((p,i)=>{
+    const r = platRect(L,p);
+    const isSel = sel && sel.kind==='plat' && sel.idx===i;
+    const float = (p.h != null);    // piattaforma flottante (altezza propria)
+    drawBox(r, isSel ? 'rgba(61,169,252,.5)' : (float?'rgba(120,220,150,.55)':'rgba(70,196,110,.40)'),
+               isSel ? 'rgba(61,169,252,1)'   : 'rgba(70,196,110,1)', isSel);
+    if(scale>0.22){ ctx.fillStyle='rgba(255,255,255,.9)'; ctx.font='10px monospace';
+      ctx.fillText('#'+i, W2S_X(r.x)+3, W2S_Y(r.y)+12); }
+  });
+
+  // piattaforme mobili
+  if(L.movVar){
+    const mv = data[L.movVar] || [];
+    mv.forEach((p,i)=>{
+      const y = (p.baseY!=null?p.baseY:p.y);
+      const r = {x:p.x, y, w:p.w, h:(p.h!=null?p.h:20)};
+      const isSel = sel && sel.kind==='mov' && sel.idx===i;
+      drawBox(r, isSel ? 'rgba(61,169,252,.45)' : 'rgba(245,166,35,.45)',
+                 isSel ? 'rgba(61,169,252,1)'   : 'rgba(245,166,35,1)', isSel);
+      // range di salita (verso l'alto)
+      if(p.range){
+        ctx.strokeStyle='rgba(245,166,35,.5)'; ctx.setLineDash([4,4]);
+        ctx.strokeRect(W2S_X(p.x), W2S_Y(y-p.range), p.w*scale, (p.range+ (p.h||20))*scale);
+        ctx.setLineDash([]);
+      }
+    });
+  }
+
+  // bandierina (calcolata: ultima piattaforma)
+  const g = goalOf(L);
+  if(g){
+    drawBox(g, 'rgba(255,215,0,.35)', 'rgba(255,215,0,1)', false);
+    ctx.fillStyle='rgba(255,215,0,1)'; ctx.font=(12)+'px sans-serif';
+    ctx.fillText('🏁', W2S_X(g.x)+2, W2S_Y(g.y)-2);
+  }
+
+  // righello x ogni 500px
+  ctx.fillStyle='rgba(255,255,255,.35)'; ctx.font='10px monospace';
+  for(let wx=0; wx<=L.levelW; wx+=500){
+    const sx = W2S_X(wx);
+    if(sx<-30||sx>cv.width) continue;
+    ctx.fillRect(sx, 0, 1, 6); ctx.fillText(wx, sx+2, 14);
+  }
+  updateExport();
+}
+function drawBox(r, fill, stroke, sel){
+  ctx.fillStyle = fill;
+  ctx.fillRect(W2S_X(r.x), W2S_Y(r.y), r.w*scale, r.h*scale);
+  ctx.strokeStyle = stroke; ctx.lineWidth = sel?2:1;
+  ctx.strokeRect(W2S_X(r.x), W2S_Y(r.y), r.w*scale, r.h*scale);
+  if(sel){
+    // handle ridimensionamento (bordo dx e angolo)
+    ctx.fillStyle = stroke;
+    const hx = W2S_X(r.x+r.w), hy = W2S_Y(r.y+r.h);
+    ctx.fillRect(hx-5, W2S_Y(r.y)+ (r.h*scale)/2 -5, 10,10);   // dx
+    ctx.fillRect(hx-5, hy-5, 10,10);                            // angolo
+  }
+}
+
+/* ════════ hit-testing ════════ */
+function hit(wx, wy){
+  const L = cur;
+  // mobili sopra le solide
+  if(L.movVar){
+    const mv = data[L.movVar]||[];
+    for(let i=mv.length-1;i>=0;i--){
+      const p=mv[i], y=(p.baseY!=null?p.baseY:p.y), h=(p.h!=null?p.h:20);
+      if(wx>=p.x&&wx<=p.x+p.w&&wy>=y&&wy<=y+h) return {kind:'mov',idx:i};
+    }
+  }
+  const arr = data[L.platsVar]||[];
+  for(let i=arr.length-1;i>=0;i--){
+    const r=platRect(L,arr[i]);
+    if(wx>=r.x&&wx<=r.x+r.w&&wy>=r.y&&wy<=r.y+r.h) return {kind:'plat',idx:i};
+  }
+  return null;
+}
+function selObj(){
+  if(!sel) return null;
+  const arr = sel.kind==='mov' ? data[cur.movVar] : data[cur.platsVar];
+  return arr ? arr[sel.idx] : null;
+}
+function handleZone(wx,wy){      // su quale handle dell'elemento selezionato?
+  const o = selObj(); if(!o) return null;
+  let r;
+  if(sel.kind==='mov'){ const y=(o.baseY!=null?o.baseY:o.y); r={x:o.x,y,w:o.w,h:(o.h!=null?o.h:20)}; }
+  else r = platRect(cur,o);
+  const tol = 8/scale;
+  const nearRight = Math.abs(wx-(r.x+r.w))<tol && wy>r.y-tol && wy<r.y+r.h+tol;
+  const nearBottom= Math.abs(wy-(r.y+r.h))<tol && wx>r.x-tol && wx<r.x+r.w+tol;
+  const canH = true;   // altezza sempre modificabile (crea piattaforme flottanti)
+  if(nearRight && nearBottom && canH) return 'resizeWH';
+  if(nearRight) return 'resizeW';
+  if(nearBottom && canH) return 'resizeH';
+  return null;
+}
+
+/* ════════ interazione mouse ════════ */
+function evWorld(e){
+  const r = cv.getBoundingClientRect();
+  return { wx:S2W_X(e.clientX-r.left), wy:S2W_Y(e.clientY-r.top) };
+}
+cv.addEventListener('mousedown', e=>{
+  const {wx,wy} = evWorld(e);
+  if(sel){
+    const hz = handleZone(wx,wy);
+    if(hz){ dragMode=hz; dragStart={wx,wy,o:{...selObj()}}; return; }
+  }
+  const h = hit(wx,wy);
+  if(h){
+    sel = h; refreshSel();
+    dragMode='move'; dragStart={wx,wy,o:{...selObj()}};
+  } else {
+    sel = null; refreshSel();
+    dragMode='pan'; dragStart={wx, camX};
+  }
+  draw();
+});
+window.addEventListener('mousemove', e=>{
+  if(!dragMode) { // hover cursor
+    return;
+  }
+  const {wx,wy}=evWorld(e);
+  if(dragMode==='pan'){
+    camX = clampCam(dragStart.camX - (wx-dragStart.wx));
+    draw(); return;
+  }
+  const o = selObj(); if(!o){dragMode=null;return;}
+  const sgrid = $('snap').checked ? 5 : 1;
+  const sn = v => Math.round(v/sgrid)*sgrid;
+  const dx = wx-dragStart.wx, dy=wy-dragStart.wy;
+  const base = dragStart.o;
+  // altezza di partenza: esplicita, oppure derivata (colonna fino al fondo nei livelli floorH)
+  const baseH = (base.h!=null) ? base.h
+              : (sel.kind==='mov' ? 20 : (cur.floorH ? (cur.stageH-base.y) : 20));
+  if(dragMode==='move'){
+    o.x = sn(Math.max(0, base.x+dx));
+    const yk = (sel.kind==='mov' && base.baseY!=null) ? 'baseY':'y';
+    o[yk] = sn(Math.max(0, (base[yk]!=null?base[yk]:base.y)+dy));
+    if(sel.kind==='mov' && yk==='baseY') o.y = o.baseY;
+  } else if(dragMode==='resizeW'){
+    o.w = sn(Math.max(8, base.w+dx));
+  } else if(dragMode==='resizeH'){
+    o.h = sn(Math.max(8, baseH + dy));     // imposta altezza esplicita => piattaforma flottante
+  } else if(dragMode==='resizeWH'){
+    o.w = sn(Math.max(8, base.w+dx));
+    o.h = sn(Math.max(8, baseH + dy));
+  }
+  refreshSel(); draw();
+});
+window.addEventListener('mouseup', ()=>{ dragMode=null; dragStart=null; });
+cv.addEventListener('wheel', e=>{
+  e.preventDefault();
+  camX = clampCam(camX + (e.deltaY+e.deltaX)/scale);
+  draw();
+}, {passive:false});
+
+function clampCam(c){
+  const viewW = cv.width/scale;
+  return Math.max(0, Math.min(c, Math.max(0, cur.levelW - viewW)));
+}
+
+/* ════════ pannello selezione ════════ */
+function refreshSel(){
+  const o = selObj();
+  $('selEmpty').style.display = o? 'none':'block';
+  $('selFields').style.display = o? 'block':'none';
+  if(!o) return;
+  $('fX').value = o.x;
+  const yk = (sel.kind==='mov' && o.baseY!=null)?'baseY':'y';
+  $('fY').value = o[yk];
+  $('fW').value = o.w;
+  $('rowH').style.display = 'flex';
+  $('fH').value = (o.h!=null?o.h:(cur.floorH? (cur.stageH-o.y):20));
+  $('rowRange').style.display = (sel.kind==='mov' && o.range!=null)?'flex':'none';
+  if(o.range!=null) $('fRange').value = o.range;
+}
+['fX','fY','fW','fH','fRange'].forEach(id=>{
+  $(id).addEventListener('input', ()=>{
+    const o = selObj(); if(!o) return;
+    const v = parseFloat($(id).value)||0;
+    if(id==='fX') o.x=v;
+    if(id==='fY'){ const yk=(sel.kind==='mov'&&o.baseY!=null)?'baseY':'y'; o[yk]=v; if(yk==='baseY')o.y=v; }
+    if(id==='fW') o.w=v;
+    if(id==='fH') o.h=v;
+    if(id==='fRange') o.range=v;
+    draw();
+  });
+});
+
+/* ════════ aggiungi / elimina / duplica ════════ */
+$('btnAdd').onclick = ()=>{
+  const arr = data[cur.platsVar];
+  const x = Math.round(camX + (cv.width/scale)/2 - 60);
+  // nuova piattaforma FLOTTANTE (altezza propria) al centro vista: poi spostabile/ridimensionabile ovunque
+  const o = {x, y:Math.round(cur.stageH*0.45), w:120, h:40};
+  arr.push(o); sel={kind:'plat',idx:arr.length-1}; refreshSel(); draw();
+};
+$('btnAddMov').onclick = ()=>{
+  if(!cur.movVar){ setStatus('Questo livello non ha piattaforme mobili.'); return; }
+  const arr = data[cur.movVar];
+  const x = Math.round(camX + (cv.width/scale)/2 - 60);
+  const tmpl = arr[0] ? {...arr[0]} : {x,baseY:200,w:120,h:20,range:80,period:200,phase:0,y:200};
+  tmpl.id = 'm'+Date.now().toString().slice(-5);
+  tmpl.x = x; tmpl.baseY = Math.round(cur.stageH*0.5); tmpl.y = tmpl.baseY;
+  arr.push(tmpl); sel={kind:'mov',idx:arr.length-1}; refreshSel(); draw();
+};
+$('btnDel').onclick = delSel;
+document.addEventListener('click', e=>{ if(e.target && e.target.id==='fDel') delSel(); });
+function delSel(){
+  if(!sel) return;
+  const arr = sel.kind==='mov'?data[cur.movVar]:data[cur.platsVar];
+  arr.splice(sel.idx,1); sel=null; refreshSel(); draw();
+}
+function dupSel(){
+  const o = selObj(); if(!o) return;
+  const arr = sel.kind==='mov'?data[cur.movVar]:data[cur.platsVar];
+  const c = {...o}; c.x += 40; if(c.id) c.id='m'+Date.now().toString().slice(-5);
+  arr.push(c); sel={kind:sel.kind,idx:arr.length-1}; refreshSel(); draw();
+}
+window.addEventListener('keydown', e=>{
+  if(e.target.tagName==='INPUT'||e.target.tagName==='TEXTAREA') return;
+  if(e.key==='Delete'||e.key==='Backspace'){ e.preventDefault(); delSel(); }
+  if(e.key==='d'||e.key==='D'){ dupSel(); }
+});
+
+/* ════════ zoom ════════ */
+function fitWidth(){ scale = cv.width / cur.levelW; camX = 0; draw(); }      // panoramica intero livello
+function fitHeight(){ scale = cv.height / cur.stageH; camX = clampCam(camX); draw(); } // altezza piena (side-scroller)
+$('btnZoomIn').onclick  = ()=>{ scale=Math.min(4, scale*1.25); camX=clampCam(camX); draw(); };
+$('btnZoomOut').onclick = ()=>{ scale=Math.max(.02, scale/1.25); camX=clampCam(camX); draw(); };
+$('btnZoomFit').onclick = fitWidth;
+
+/* ════════ cambio livello ════════ */
+function selectLevel(idx){
+  cur = LEVELS[idx];
+  sel = null; camX = 0;
+  fitHeight();   // vista ad altezza piena (side-scroller): piattaforme grandi e ben visibili
+  const isRect = cur.collision==='rect';
+  const note = $('lvlNote');
+  note.className = 'note'+(isRect?' rect':'');
+  note.innerHTML = isRect
+    ? '<b>Collisioni a rettangoli.</b> Tutto ciò che modifichi qui (sposta/ridimensiona/aggiungi/elimina) cambia <b>realmente</b> dove cammina il personaggio.'
+    : '<b>Terreno dentro al PNG di sfondo.</b> Il suolo fisso si cambia solo modificando l’immagine. Qui puoi comunque editare le <b>piattaforme mobili</b> e usare i rettangoli come riferimento per nemici/bandierina.';
+  refreshSel(); draw();
+}
+
+/* ════════ esporta / salva ════════ */
+function serializeNum(v){ return Number.isInteger(v)?v:Math.round(v); }
+function serializeObj(o){
+  return '{'+Object.keys(o).map(k=>{
+    const v=o[k];
+    if(typeof v==='string') return k+":'"+v+"'";
+    return k+':'+serializeNum(v);
+  }).join(',')+'}';
+}
+function serializeArray(name, arr){
+  const body = arr.map(o=>'  '+serializeObj(o)).join(',\n');
+  return 'const '+name+'=[\n'+body+'\n]';
+}
+function updateExport(){
+  if(!cur) return;
+  let txt = serializeArray(cur.platsVar, data[cur.platsVar]||[]) + ';';
+  if(cur.movVar) txt += '\n\n'+serializeArray(cur.movVar, data[cur.movVar]||[]) + ';';
+  $('export').value = txt;
+}
+function buildUpdatedSrc(){
+  let out = gameSrc;
+  for(const L of LEVELS){
+    for(const v of [L.platsVar, L.movVar]){
+      if(!v || !data[v]) continue;
+      const re = new RegExp('const\\s+'+v+'\\s*=\\s*\\[[\\s\\S]*?\\]');
+      out = out.replace(re, serializeArray(v, data[v]));
+    }
+  }
+  return out;
+}
+$('btnDownload').onclick = ()=>{
+  const blob = new Blob([buildUpdatedSrc()], {type:'text/html'});
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob); a.download = 'livia_game.html'; a.click();
+  setStatus('File scaricato — sostituiscilo all’originale.');
+};
+$('btnOpen').onclick = async ()=>{
+  if(!window.showOpenFilePicker){ setStatus('Salvataggio diretto non supportato — usa Scarica.'); return; }
+  try{
+    [fileHandle] = await window.showOpenFilePicker({types:[{description:'HTML',accept:{'text/html':['.html']}}]});
+    const f = await fileHandle.getFile(); gameSrc = await f.text();
+    parseAll(); selectLevel(LEVELS.findIndex(l=>l===cur));
+    setStatus('File aperto: '+fileHandle.name+' — ora puoi Salvare.');
+  }catch(e){ /* annullato */ }
+};
+$('btnSave').onclick = async ()=>{
+  const out = buildUpdatedSrc();
+  if(fileHandle && fileHandle.createWritable){
+    try{
+      const w = await fileHandle.createWritable();
+      await w.write(out); await w.close();
+      gameSrc = out;
+      setStatus('💾 Salvato in '+fileHandle.name+'. Ricarica il gioco per vedere le modifiche.');
+      return;
+    }catch(e){ setStatus('Errore salvataggio: '+e.message); }
+  }
+  // niente handle: prova showSaveFilePicker, altrimenti download
+  if(window.showSaveFilePicker){
+    try{
+      const h = await window.showSaveFilePicker({suggestedName:'livia_game.html', types:[{accept:{'text/html':['.html']}}]});
+      const w = await h.createWritable(); await w.write(out); await w.close();
+      fileHandle = h; gameSrc = out;
+      setStatus('💾 Salvato. Ricarica il gioco.'); return;
+    }catch(e){ if(e.name==='AbortError') return; }
+  }
+  $('btnDownload').click();
+};
+
+function setStatus(t){ $('status').textContent = t; }
+
+/* ════════ menu livelli ════════ */
+LEVELS.forEach((L,i)=>{
+  const o=document.createElement('option'); o.value=i; o.textContent=L.name; $('levelSel').appendChild(o);
+});
+$('levelSel').onchange = e=> selectLevel(+e.target.value);
+
+/* ════════ avvio ════════ */
+window.addEventListener('resize', resize);
+(async function init(){
+  try{
+    const res = await fetch('livia_game.html');
+    if(!res.ok) throw new Error('HTTP '+res.status);
+    gameSrc = await res.text();
+    parseAll();
+    $('overlay').style.display='none';
+    resize();
+    selectLevel(0);
+    setStatus('Pronto. '+ (data['RAW_PLATS']?data['RAW_PLATS'].length:0) +' piattaforme in L1.');
+  }catch(e){
+    $('ovText').innerHTML = 'Impossibile caricare <code>livia_game.html</code>.<br><br>'+
+      'Apri questo editor tramite il server locale:<br><b>http://localhost:3333/editor.html</b><br><br>'+
+      '(non aprire il file con doppio-click). Dettaglio: '+e.message;
+  }
+})();
+</script>
+</body>
+</html>
