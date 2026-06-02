@@ -95,9 +95,11 @@
     </div>
 
     <div id="tileBox" style="display:none">
-      <h2>Grafica piattaforma (tile)</h2>
-      <div class="hint" style="margin-bottom:6px">Clicca un disegno per assegnarlo alla piattaforma selezionata.</div>
+      <h2>Disegni piattaforma</h2>
+      <div class="hint" style="margin-bottom:6px">Clicca un disegno per <b>inserire</b> una piattaforma. Se una piattaforma è selezionata, ne <b>cambia</b> il disegno.</div>
       <div id="tileGrid" style="display:grid;grid-template-columns:repeat(4,1fr);gap:5px"></div>
+      <button id="platUpload" style="width:100%;margin-top:6px">⬆︎ Carica disegno da file…</button>
+      <input type="file" id="platFile" accept="image/*" style="display:none">
     </div>
 
     <div id="enemyTypesBox" style="display:none">
@@ -197,6 +199,8 @@ const customBgs = {};        // nomeCostante -> dataURL (sfondi caricati dall'ut
 const bgImages = {};         // nomeCostante -> Image (per anteprima, inclusi i custom)
 const customEnemies = {};    // nome tipo -> {walk,idle,attack,die} dataURL
 const customEnemyImg = {};   // nome tipo -> {walk:Image,...} (anteprima editor)
+const customPlatforms = {};  // nome -> dataURL (disegni-piattaforma caricati)
+const customPlatformImg = {};// nome -> Image (anteprima editor)
 let cur = null;              // livello corrente (voce di LEVELS)
 let camX = 0, scale = 1;
 let sel = null;              // {arr, idx, kind:'plat'|'mov'}
@@ -280,11 +284,19 @@ function parseAll(){
   for(const L of LEVELS){
     if(L.tilesArrVar && data[L.platsVar]){
       const n=(tileSets[L.tilesArrVar]||[]).length||16;
-      if(n) data[L.platsVar].forEach((p,i)=>{ if(p.tile==null) p.tile=i%n; });
+      if(n) data[L.platsVar].forEach((p,i)=>{ if(p.tile==null && p.tileSrc==null) p.tile=i%n; });
     }
   }
   parseBackgrounds();
   parseCustomEnemies();
+  parseCustomPlatforms();
+}
+function parseCustomPlatforms(){
+  const obj = extractObjLiteral('CUSTOM_PLATFORM_IMG');
+  if(obj){ Object.assign(customPlatforms, obj); Object.keys(obj).forEach(loadCustomPlatformImg); }
+}
+function loadCustomPlatformImg(name){
+  if(customPlatforms[name] && !customPlatformImg[name]){ const im=new Image(); im.onload=draw; im.src=customPlatforms[name]; customPlatformImg[name]=im; }
 }
 function parseCustomEnemies(){
   const obj = extractObjLiteral('CUSTOM_ENEMIES');
@@ -384,8 +396,11 @@ function draw(){
     const r = platRect(L,p);
     const isSel = sel && sel.kind==='plat' && sel.idx===i;
     const float = (p.h != null);    // piattaforma flottante (altezza propria)
-    // anteprima del tile grafico (come in gioco) se il livello li usa
-    if(tiles && tiles.length){
+    // anteprima del disegno (come in gioco) se il livello usa i tile
+    if(p.tileSrc && customPlatformImg[p.tileSrc]){
+      const ci=customPlatformImg[p.tileSrc];
+      if(ci.complete && ci.naturalWidth) ctx.drawImage(ci, W2S_X(r.x), W2S_Y(r.y), r.w*scale, r.h*scale);
+    } else if(tiles && tiles.length){
       const t = tiles[(p.tile!=null?p.tile:i)%tiles.length];
       const tImg = tileImgFor(t);
       if(tImg && tImg.complete && tImg.naturalWidth){
@@ -594,45 +609,76 @@ function refreshSel(){
   $('selEmpty').style.display = o? 'none':'block';
   $('selFields').style.display = (o && !isEnemy)? 'block':'none';
   $('enemyBox').style.display = isEnemy? 'block':'none';
-  if(!o){ $('tileBox').style.display='none'; return; }
   if(isEnemy){
     populateEnemyTypeSelect();
     $('eType').value = o.type||'shark';
     $('eX').value=o.x; $('eY').value=o.y;
-    $('tileBox').style.display='none';
-    return;
+  } else if(o){
+    $('fX').value = o.x;
+    const yk = (sel.kind==='mov' && o.baseY!=null)?'baseY':'y';
+    $('fY').value = o[yk];
+    $('fW').value = o.w;
+    $('rowH').style.display = 'flex';
+    $('fH').value = (o.h!=null?o.h:(cur.floorH? (cur.stageH-o.y):20));
+    $('rowRange').style.display = (sel.kind==='mov' && o.range!=null)?'flex':'none';
+    if(o.range!=null) $('fRange').value = o.range;
   }
-  $('fX').value = o.x;
-  const yk = (sel.kind==='mov' && o.baseY!=null)?'baseY':'y';
-  $('fY').value = o[yk];
-  $('fW').value = o.w;
-  $('rowH').style.display = 'flex';
-  $('fH').value = (o.h!=null?o.h:(cur.floorH? (cur.stageH-o.y):20));
-  $('rowRange').style.display = (sel.kind==='mov' && o.range!=null)?'flex':'none';
-  if(o.range!=null) $('fRange').value = o.range;
-  buildTilePicker();
+  buildTilePicker();   // libreria disegni sempre disponibile (livelli con tile)
+}
+function tileThumb(paint, selected, title, onclick){
+  const c=document.createElement('canvas'); c.width=58; c.height=44;
+  c.style.cssText='width:100%;height:auto;border-radius:5px;cursor:pointer;background:#0a0e13;border:2px solid '+(selected?'var(--accent)':'transparent');
+  c.title=title; paint(c.getContext('2d')); c.onclick=onclick; return c;
 }
 function buildTilePicker(){
   const tiles = curTiles();
-  const o = selObj();
-  const show = tiles && tiles.length && o && sel.kind==='plat';
-  $('tileBox').style.display = show ? 'block' : 'none';
-  if(!show) return;
-  const grid = $('tileGrid'); grid.innerHTML='';
+  if(!tiles){ $('tileBox').style.display='none'; return; }
+  $('tileBox').style.display='block';
+  const o = (sel&&sel.kind==='plat')?selObj():null;
+  const grid=$('tileGrid'); grid.innerHTML='';
+  // disegni predefiniti (dai fogli tile)
   tiles.forEach((t,idx)=>{
-    const c = document.createElement('canvas'); c.width=58; c.height=44;
-    c.style.cssText='width:100%;height:auto;border-radius:5px;cursor:pointer;background:#0a0e13;border:2px solid '+
-      ((o.tile!=null?o.tile:-1)===idx?'var(--accent)':'transparent');
-    c.title='Tile '+idx;
-    const cx=c.getContext('2d'); const tImg=tileImgFor(t);
-    if(tImg && tImg.complete && tImg.naturalWidth){
-      const s=Math.min(c.width/t.sw, c.height/t.sh), dw=t.sw*s, dh=t.sh*s;
-      cx.drawImage(tImg,t.sx,t.sy,t.sw,t.sh,(c.width-dw)/2,(c.height-dh)/2,dw,dh);
-    }
-    c.onclick=()=>{ o.tile=idx; lockAspectFromW(o); refreshSel(); draw(); };
-    grid.appendChild(c);
+    const seld = o && o.tile===idx && o.tileSrc==null;
+    grid.appendChild(tileThumb(cx=>{
+      const tImg=tileImgFor(t);
+      if(tImg&&tImg.complete&&tImg.naturalWidth){ const s=Math.min(58/t.sw,44/t.sh),dw=t.sw*s,dh=t.sh*s; cx.drawImage(tImg,t.sx,t.sy,t.sw,t.sh,(58-dw)/2,(44-dh)/2,dw,dh); }
+    }, seld, 'Disegno '+idx, ()=>chooseGraphic({tile:idx})));
+  });
+  // disegni caricati dall'utente
+  Object.keys(customPlatforms).forEach(name=>{
+    const seld = o && o.tileSrc===name;
+    grid.appendChild(tileThumb(cx=>{
+      const im=customPlatformImg[name];
+      if(im&&im.complete&&im.naturalWidth){ const s=Math.min(58/im.naturalWidth,44/im.naturalHeight),dw=im.naturalWidth*s,dh=im.naturalHeight*s; cx.drawImage(im,(58-dw)/2,(44-dh)/2,dw,dh); }
+    }, seld, name, ()=>chooseGraphic({tileSrc:name})));
   });
 }
+function chooseGraphic(g){
+  if(sel && sel.kind==='plat'){          // cambia il disegno della piattaforma selezionata
+    const o=selObj();
+    if(g.tile!=null){ o.tile=g.tile; delete o.tileSrc; lockAspectFromW(o); }
+    else { o.tileSrc=g.tileSrc; delete o.tile; const im=customPlatformImg[g.tileSrc]; if(im&&im.naturalWidth) o.h=Math.round(o.w*im.naturalHeight/im.naturalWidth); }
+    refreshSel(); draw();
+  } else {                                // inserisci una nuova piattaforma con questo disegno
+    const arr=data[cur.platsVar];
+    const x=Math.round(camX+(cv.width/scale)/2-90);
+    const o={x,y:Math.round(cur.stageH*0.4),w:180};
+    if(g.tile!=null){ const t=curTiles()[g.tile]; o.tile=g.tile; o.h=Math.round(180*t.sh/t.sw); }
+    else { o.tileSrc=g.tileSrc; const im=customPlatformImg[g.tileSrc]; o.h=(im&&im.naturalWidth)?Math.round(180*im.naturalHeight/im.naturalWidth):100; }
+    arr.push(o); sel={kind:'plat',idx:arr.length-1}; refreshSel(); draw();
+    setStatus('Piattaforma inserita — trascinala/ridimensionala.');
+  }
+}
+$('platUpload').onclick=()=>$('platFile').click();
+$('platFile').onchange=e=>{
+  const f=e.target.files[0]; if(!f) return;
+  let nm=(prompt('Nome del disegno-piattaforma:', f.name.replace(/\.[^.]+$/,''))||'').trim().toLowerCase().replace(/[^a-z0-9]+/g,'_').replace(/^_|_$/g,'');
+  if(!nm) nm='plat'+Date.now().toString().slice(-5);
+  const rd=new FileReader();
+  rd.onload=()=>{ customPlatforms[nm]=rd.result; loadCustomPlatformImg(nm); buildTilePicker();
+    setStatus('Disegno "'+nm+'" in libreria. Clicca la sua anteprima per inserirlo nel livello.'); };
+  rd.readAsDataURL(f); e.target.value='';
+};
 ['fX','fY','fW','fH','fRange'].forEach(id=>{
   $(id).addEventListener('input', ()=>{
     const o = selObj(); if(!o) return;
@@ -744,7 +790,7 @@ $('btnZoomFit').onclick = fitWidth;
 
 /* ════════ sfondi ════════ */
 const BG_NAMES = {BG_SRC:'🖼 Sfondo Broccoli',FOREST_BG_SRC:'🖼 Sfondo Foresta',CITY_BG_SRC:'🖼 Sfondo Città',UNDERWATER_BG_SRC:'🖼 Sfondo Sottomarino'};
-function bgLabel(name){ return BG_NAMES[name] || (customBgs[name] ? 'Caricato: '+name.replace(/^CUSTOM_BG_|_SRC$/g,'') : name); }
+function bgLabel(name){ return BG_NAMES[name] || (name.indexOf('CUSTOM_BG_')===0 ? '🖼 '+name.replace(/^CUSTOM_BG_|_SRC$/g,'').replace(/_/g,' ') : name); }
 function populateBgSelect(){
   const s=$('bgSel'); s.innerHTML='';
   bgLibKeys.forEach(name=>{ const o=document.createElement('option'); o.value=name; o.textContent=bgLabel(name); s.appendChild(o); });
@@ -754,13 +800,16 @@ $('bgSel').onchange = e=>{ levelBg[cur.id]=e.target.value; if(!bgImages[e.target
 $('bgUpload').onclick = ()=> $('bgFile').click();
 $('bgFile').onchange = e=>{
   const f=e.target.files[0]; if(!f) return;
+  let nm=(prompt('Nome per questo sfondo:', f.name.replace(/\.[^.]+$/,''))||'').trim().toLowerCase().replace(/[^a-z0-9]+/g,'_').replace(/^_|_$/g,'');
+  if(!nm) nm='bg'+Date.now().toString().slice(-5);
   const rd=new FileReader();
   rd.onload=()=>{
-    const name='CUSTOM_BG_'+Date.now().toString().slice(-6)+'_SRC';
+    const name='CUSTOM_BG_'+nm+'_SRC';
     customBgs[name]=rd.result;
     const img=new Image(); img.onload=draw; img.src=rd.result; bgImages[name]=img;
-    bgLibKeys.push(name); levelBg[cur.id]=name; populateBgSelect(); $('bgSel').value=name; draw();
-    setStatus('Sfondo caricato e assegnato al livello '+cur.id+'. Premi Salva per renderlo permanente.');
+    if(!bgLibKeys.includes(name)) bgLibKeys.push(name);
+    levelBg[cur.id]=name; populateBgSelect(); $('bgSel').value=name; draw();
+    setStatus('Sfondo "'+nm.replace(/_/g,' ')+'" caricato e assegnato. Premi Salva per renderlo permanente.');
   };
   rd.readAsDataURL(f); e.target.value='';
 };
@@ -804,6 +853,9 @@ function serializeCustomEnemies(){
   });
   return '{'+parts.join(',')+'}';
 }
+function serializeCustomPlatforms(){
+  return '{'+Object.keys(customPlatforms).map(n=>JSON.stringify(n)+':"'+customPlatforms[n]+'"').join(',')+'}';
+}
 function updateExport(){
   if(!cur) return;
   let txt = serializeArray(cur.platsVar, data[cur.platsVar]||[]) + ';';
@@ -836,6 +888,10 @@ function buildUpdatedSrc(){
   if(Object.keys(customEnemies).length){
     const b = objLiteralBounds(out, 'CUSTOM_ENEMIES');
     if(b) out = out.slice(0,b.start) + serializeCustomEnemies() + out.slice(b.end);
+  }
+  if(Object.keys(customPlatforms).length){
+    const b = objLiteralBounds(out, 'CUSTOM_PLATFORM_IMG');
+    if(b) out = out.slice(0,b.start) + serializeCustomPlatforms() + out.slice(b.end);
   }
   return out;
 }
