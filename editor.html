@@ -100,14 +100,27 @@
       <div id="tileGrid" style="display:grid;grid-template-columns:repeat(4,1fr);gap:5px"></div>
     </div>
 
+    <div id="enemyTypesBox" style="display:none">
+      <h2>Tipi di nemico</h2>
+      <div id="enemyTypeList" class="hint"></div>
+      <button id="btnNewEnemyType" style="width:100%;margin-top:6px">🆕 Nuovo tipo (con immagini)…</button>
+      <div id="newEnemyForm" style="display:none;margin-top:8px;border:1px solid var(--line);border-radius:6px;padding:8px">
+        <div class="hint" style="margin-bottom:6px">Dai un nome e carica un'immagine per ogni stato.</div>
+        <div class="row"><label>Nome</label><input type="text" id="netName" placeholder="es. medusa" style="width:100%"></div>
+        <div class="row"><label>Cammina</label><input type="file" id="netWalk" accept="image/*" style="width:100%"></div>
+        <div class="row"><label>Fermo</label><input type="file" id="netIdle" accept="image/*" style="width:100%"></div>
+        <div class="row"><label>Attacca</label><input type="file" id="netAttack" accept="image/*" style="width:100%"></div>
+        <div class="row"><label>Muore</label><input type="file" id="netDie" accept="image/*" style="width:100%"></div>
+        <button id="netCreate" class="ok" style="width:100%;margin-top:6px">Crea tipo</button>
+      </div>
+    </div>
+
     <div id="enemyBox" style="display:none">
-      <h2>Nemico</h2>
-      <div class="row"><label>Tipo</label><select id="eType" style="width:100%"><option value="shark">Squalo 🦈</option><option value="octopus">Polpo 🐙</option></select></div>
+      <h2>Nemico selezionato</h2>
+      <div class="row"><label>Tipo</label><select id="eType" style="width:100%"></select></div>
       <div class="row"><label>X</label><input type="number" id="eX"></div>
       <div class="row"><label>Y</label><input type="number" id="eY"></div>
-      <div class="row"><label title="Ampiezza pattuglia orizzontale">Raggio</label><input type="number" id="eRange"></div>
-      <div class="row"><label title="Velocità di nuoto">Veloc.</label><input type="number" id="eSpeed" step="0.1"></div>
-      <div class="row"><label title="Ampiezza oscillazione verticale">Oscill.</label><input type="number" id="eBob"></div>
+      <div class="hint" style="margin-top:4px">Il movimento è casuale automatico.</div>
       <button id="eDel" class="del" style="width:100%;margin-top:10px">🗑 Elimina nemico</button>
     </div>
 
@@ -169,6 +182,7 @@ const LEVELS = [
     enemiesVar:'ENEMIES_L4', enemyTypes:['shark','octopus'] },
 ];
 const ENEMY_SIZE = { shark:{w:50,h:38,icon:'🦈'}, octopus:{w:36,h:44,icon:'🐙'} };
+function enemySize(type){ return ENEMY_SIZE[type] || {w:46,h:46,icon:'👾'}; }
 
 /* ─── stato ─── */
 let gameSrc = '';            // testo completo di livia_game.html
@@ -181,6 +195,8 @@ let bgLibKeys = [];          // nomi costanti sfondo disponibili (built-in + car
 const bgLibBase = [];        // solo i built-in (per ricostruire BG_LIBRARY)
 const customBgs = {};        // nomeCostante -> dataURL (sfondi caricati dall'utente)
 const bgImages = {};         // nomeCostante -> Image (per anteprima, inclusi i custom)
+const customEnemies = {};    // nome tipo -> {walk,idle,attack,die} dataURL
+const customEnemyImg = {};   // nome tipo -> {walk:Image,...} (anteprima editor)
 let cur = null;              // livello corrente (voce di LEVELS)
 let camX = 0, scale = 1;
 let sel = null;              // {arr, idx, kind:'plat'|'mov'}
@@ -198,6 +214,27 @@ function extractArray(name){
   if(!m) return null;
   try { return (new Function('return '+m[1]))(); }
   catch(e){ console.error('parse array',name,e); return null; }
+}
+// estrae il testo di un literal oggetto { ... } bilanciato (gestisce annidamenti e stringhe)
+function objLiteralBounds(src, name){
+  const m = src.match(new RegExp(name+'\\s*=\\s*'));
+  if(!m) return null;
+  const start = m.index + m[0].length;
+  if(src[start] !== '{') return null;
+  let depth=0, inStr=false, q='';
+  for(let k=start;k<src.length;k++){
+    const c=src[k];
+    if(inStr){ if(c===q) inStr=false; continue; }
+    if(c==='"'||c==="'"||c==='`'){ inStr=true; q=c; continue; }
+    if(c==='{') depth++;
+    else if(c==='}'){ depth--; if(depth===0) return {start, end:k+1}; }
+  }
+  return null;
+}
+function extractObjLiteral(name){
+  const b = objLiteralBounds(gameSrc, name);
+  if(!b) return null;
+  try{ return (new Function('return '+gameSrc.slice(b.start,b.end)))(); }catch(e){ return null; }
 }
 function extractString(name){
   // Gestisce sia stringhe singole sia concatenazioni: const X="a"+"b"+ ... ;
@@ -239,7 +276,20 @@ function parseAll(){
     if(L.enemiesVar) data[L.enemiesVar] = extractArray(L.enemiesVar) || [];
   }
   parseBackgrounds();
+  parseCustomEnemies();
 }
+function parseCustomEnemies(){
+  const obj = extractObjLiteral('CUSTOM_ENEMIES');
+  if(obj){ Object.assign(customEnemies, obj); Object.keys(obj).forEach(loadCustomEnemyImg); }
+}
+function loadCustomEnemyImg(name){
+  const st = customEnemies[name]; if(!st) return;
+  customEnemyImg[name] = customEnemyImg[name] || {};
+  ['walk','idle','attack','die'].forEach(k=>{
+    if(st[k] && !customEnemyImg[name][k]){ const im=new Image(); im.onload=draw; im.src=st[k]; customEnemyImg[name][k]=im; }
+  });
+}
+function allEnemyTypes(){ return ['shark','octopus', ...Object.keys(customEnemies)]; }
 function parseBackgrounds(){
   // mappa LEVEL_BG={1:'BG_SRC',...}
   const m = gameSrc.match(/LEVEL_BG\s*=\s*(\{[\s\S]*?\})/);
@@ -356,29 +406,24 @@ function draw(){
     });
   }
 
-  // nemici (autoriali)
+  // nemici (autoriali): posizione + immagine; il movimento è casuale in gioco
   if(L.enemiesVar){
     const ens = data[L.enemiesVar] || [];
     ens.forEach((e,i)=>{
-      const sz = ENEMY_SIZE[e.type] || ENEMY_SIZE.shark;
-      const range = e.range!=null?e.range:600, sx = e.x - range/2;
-      const bob = e.bob!=null?e.bob:25;
-      const cyW = sz.h/2;
+      const sz = enemySize(e.type);
       const isSel = sel && sel.kind==='enemy' && sel.idx===i;
-      // linea di pattuglia orizzontale
-      ctx.strokeStyle='rgba(255,120,120,.6)'; ctx.setLineDash([6,4]);
-      ctx.beginPath(); ctx.moveTo(W2S_X(sx),W2S_Y(e.y+cyW)); ctx.lineTo(W2S_X(sx+range),W2S_Y(e.y+cyW)); ctx.stroke();
-      // range di oscillazione verticale
-      ctx.strokeStyle='rgba(120,180,255,.5)';
-      ctx.strokeRect(W2S_X(e.x), W2S_Y(e.y-bob), sz.w*scale, (sz.h+2*bob)*scale);
-      ctx.setLineDash([]);
-      // marker
-      ctx.fillStyle = isSel?'rgba(61,169,252,.65)':(e.type==='octopus'?'rgba(180,90,220,.6)':'rgba(230,90,90,.6)');
-      ctx.fillRect(W2S_X(e.x), W2S_Y(e.y), sz.w*scale, sz.h*scale);
-      ctx.strokeStyle = isSel?'#3da9fc':'#fff'; ctx.lineWidth=isSel?2:1;
-      ctx.strokeRect(W2S_X(e.x), W2S_Y(e.y), sz.w*scale, sz.h*scale);
-      if(scale>0.3){ ctx.font=Math.max(10,sz.h*scale*0.6)+'px sans-serif';
-        ctx.fillText(sz.icon, W2S_X(e.x)+2, W2S_Y(e.y)+sz.h*scale*0.75); }
+      const sx=W2S_X(e.x), sy=W2S_Y(e.y), sw=sz.w*scale, sh=sz.h*scale;
+      const cset=customEnemyImg[e.type], cimg=cset&&(cset.walk||cset.idle||cset.attack||cset.die);
+      if(cimg && cimg.complete && cimg.naturalWidth){
+        ctx.drawImage(cimg, sx, sy, sw, sh);
+      } else {
+        ctx.fillStyle = e.type==='octopus'?'rgba(180,90,220,.6)':e.type==='shark'?'rgba(230,90,90,.6)':'rgba(120,200,120,.6)';
+        ctx.fillRect(sx,sy,sw,sh);
+        if(scale>0.3){ ctx.font=Math.max(10,sh*0.6)+'px sans-serif'; ctx.fillText(sz.icon, sx+2, sy+sh*0.78); }
+      }
+      ctx.strokeStyle = isSel?'#3da9fc':'rgba(255,255,255,.85)'; ctx.lineWidth=isSel?2.5:1;
+      ctx.strokeRect(sx,sy,sw,sh);
+      if(scale>0.3){ ctx.fillStyle='rgba(255,255,255,.9)'; ctx.font='9px monospace'; ctx.fillText(e.type, sx, sy-3); }
     });
   }
 
@@ -420,7 +465,7 @@ function hit(wx, wy){
   if(L.enemiesVar){
     const ens = data[L.enemiesVar]||[];
     for(let i=ens.length-1;i>=0;i--){
-      const e=ens[i], sz=ENEMY_SIZE[e.type]||ENEMY_SIZE.shark;
+      const e=ens[i], sz=enemySize(e.type);
       if(wx>=e.x&&wx<=e.x+sz.w&&wy>=e.y&&wy<=e.y+sz.h) return {kind:'enemy',idx:i};
     }
   }
@@ -536,11 +581,9 @@ function refreshSel(){
   $('enemyBox').style.display = isEnemy? 'block':'none';
   if(!o){ $('tileBox').style.display='none'; return; }
   if(isEnemy){
+    populateEnemyTypeSelect();
     $('eType').value = o.type||'shark';
     $('eX').value=o.x; $('eY').value=o.y;
-    $('eRange').value = o.range!=null?o.range:600;
-    $('eSpeed').value = o.speed!=null?o.speed:1.2;
-    $('eBob').value   = o.bob!=null?o.bob:25;
     $('tileBox').style.display='none';
     return;
   }
@@ -587,16 +630,44 @@ function buildTilePicker(){
     draw();
   });
 });
-['eType','eX','eY','eRange','eSpeed','eBob'].forEach(id=>{
+['eType','eX','eY'].forEach(id=>{
   $(id).addEventListener('input', ()=>{
     const o = selObj(); if(!o || sel.kind!=='enemy') return;
     if(id==='eType') o.type=$(id).value;
-    else { const v=parseFloat($(id).value)||0;
-      if(id==='eX')o.x=v; if(id==='eY')o.y=v; if(id==='eRange')o.range=v; if(id==='eSpeed')o.speed=v; if(id==='eBob')o.bob=v; }
+    else { const v=parseFloat($(id).value)||0; if(id==='eX')o.x=v; if(id==='eY')o.y=v; }
     draw();
   });
 });
 document.addEventListener('click', e=>{ if(e.target && e.target.id==='eDel') delSel(); });
+
+/* ── tipi di nemico personalizzati ── */
+function enemyTypeLabel(t){ return t==='shark'?'Squalo 🦈':t==='octopus'?'Polpo 🐙':t+' 👾'; }
+function populateEnemyTypeSelect(){
+  const s=$('eType'); const cur=s.value; s.innerHTML='';
+  allEnemyTypes().forEach(t=>{ const o=document.createElement('option'); o.value=t; o.textContent=enemyTypeLabel(t); s.appendChild(o); });
+  if(cur) s.value=cur;
+}
+function populateEnemyTypeList(){
+  const names=Object.keys(customEnemies);
+  $('enemyTypeList').innerHTML = 'Predefiniti: 🦈 Squalo, 🐙 Polpo.' + (names.length? '<br>Personalizzati: '+names.join(', ') : '<br>Nessun tipo personalizzato.');
+}
+$('btnNewEnemyType').onclick = ()=>{ const f=$('newEnemyForm'); f.style.display = f.style.display==='none'?'block':'none'; };
+$('netCreate').onclick = async ()=>{
+  const name=($('netName').value||'').trim().toLowerCase().replace(/[^a-z0-9_]/g,'');
+  if(!name){ setStatus('Dai un nome al tipo (solo lettere/numeri).'); return; }
+  const reads={};
+  for(const [id,key] of [['netWalk','walk'],['netIdle','idle'],['netAttack','attack'],['netDie','die']]){
+    const file=$(id).files[0];
+    if(file) reads[key]=await new Promise(res=>{ const r=new FileReader(); r.onload=()=>res(r.result); r.readAsDataURL(file); });
+  }
+  if(!Object.keys(reads).length){ setStatus('Carica almeno una immagine.'); return; }
+  customEnemies[name]=reads; loadCustomEnemyImg(name);
+  populateEnemyTypeList(); populateEnemyTypeSelect();
+  $('newEnemyForm').style.display='none'; $('netName').value='';
+  ['netWalk','netIdle','netAttack','netDie'].forEach(id=>$(id).value='');
+  setStatus('Tipo "'+name+'" creato. Usa "+ Nemico" per posizionarlo. Salva per renderlo permanente.');
+  draw();
+};
 
 /* ════════ aggiungi / elimina / duplica ════════ */
 $('btnAdd').onclick = ()=>{
@@ -621,7 +692,8 @@ $('btnAddEnemy').onclick = ()=>{
   if(!cur.enemiesVar){ setStatus('Questo livello non supporta nemici editabili.'); return; }
   const arr = data[cur.enemiesVar];
   const x = Math.round(camX + (cv.width/scale)/2);
-  arr.push({type:'shark', x, y:Math.round(cur.stageH*0.4), range:600, speed:1.2, bob:30});
+  const defType = Object.keys(customEnemies)[0] || 'shark';
+  arr.push({type:defType, x, y:Math.round(cur.stageH*0.4)});
   sel={kind:'enemy',idx:arr.length-1}; refreshSel(); draw();
 };
 function delSel(){
@@ -676,6 +748,8 @@ function selectLevel(idx){
   cur = LEVELS[idx];
   sel = null; camX = 0;
   populateBgSelect();
+  $('enemyTypesBox').style.display = cur.enemiesVar ? 'block' : 'none';
+  if(cur.enemiesVar){ populateEnemyTypeList(); populateEnemyTypeSelect(); }
   fitHeight();   // vista ad altezza piena (side-scroller): piattaforme grandi e ben visibili
   const isRect = cur.collision==='rect';
   const note = $('lvlNote');
@@ -698,6 +772,14 @@ function serializeObj(o){
 function serializeArray(name, arr){
   const body = arr.map(o=>'  '+serializeObj(o)).join(',\n');
   return 'const '+name+'=[\n'+body+'\n]';
+}
+function serializeCustomEnemies(){
+  const parts = Object.keys(customEnemies).map(n=>{
+    const st=customEnemies[n];
+    const inner=['walk','idle','attack','die'].filter(k=>st[k]).map(k=>k+':"'+st[k]+'"').join(',');
+    return JSON.stringify(n)+':{'+inner+'}';
+  });
+  return '{'+parts.join(',')+'}';
 }
 function updateExport(){
   if(!cur) return;
@@ -727,6 +809,11 @@ function buildUpdatedSrc(){
   out = out.replace(/const\s+BG_LIBRARY\s*=\s*\{[\s\S]*?\}/, 'const BG_LIBRARY={'+allKeys.join(',')+'}');
   const lb = '{'+Object.keys(levelBg).map(k=>k+":'"+levelBg[k]+"'").join(',')+'}';
   out = out.replace(/LEVEL_BG\s*=\s*\{[\s\S]*?\}/, 'LEVEL_BG='+lb);
+  // ── tipi di nemico personalizzati (immagini incorporate) ──
+  if(Object.keys(customEnemies).length){
+    const b = objLiteralBounds(out, 'CUSTOM_ENEMIES');
+    if(b) out = out.slice(0,b.start) + serializeCustomEnemies() + out.slice(b.end);
+  }
   return out;
 }
 $('btnDownload').onclick = ()=>{
