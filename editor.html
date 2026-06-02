@@ -275,6 +275,14 @@ function parseAll(){
     if(L.tilesImgVars) L.tilesImgVars.forEach(loadImageVar);
     if(L.enemiesVar) data[L.enemiesVar] = extractArray(L.enemiesVar) || [];
   }
+  // Congela l'assegnazione tile: rende esplicito il disegno di ogni piattaforma,
+  // così cancellandone/spostandone una NON cambiano le grafiche delle altre (niente shift di indice).
+  for(const L of LEVELS){
+    if(L.tilesArrVar && data[L.platsVar]){
+      const n=(tileSets[L.tilesArrVar]||[]).length||16;
+      if(n) data[L.platsVar].forEach((p,i)=>{ if(p.tile==null) p.tile=i%n; });
+    }
+  }
   parseBackgrounds();
   parseCustomEnemies();
 }
