@@ -75,6 +75,11 @@
       <span><i class="sw" style="background:rgba(255,215,0,.8)"></i>Bandierina (auto)</span>
     </div>
 
+    <h2>Sfondo del livello</h2>
+    <div class="row"><select id="bgSel" style="width:100%"></select></div>
+    <button id="bgUpload" style="width:100%;margin-top:4px">⬆︎ Carica nuovo sfondo…</button>
+    <input type="file" id="bgFile" accept="image/*" style="display:none">
+
     <h2>Elemento selezionato</h2>
     <div id="selBox">
       <div class="hint" id="selEmpty">Nessuna selezione. Clicca una piattaforma sul canvas.</div>
@@ -157,6 +162,11 @@ let fileHandle = null;       // handle per salvataggio diretto (File System Acce
 const data = {};             // platsVar -> array oggetti ; movVar -> array oggetti
 const images = {};           // varName -> HTMLImageElement
 const tileSets = {};         // tilesArrVar -> array {img,sx,sy,sw,sh}  (es. L4_TILES)
+let levelBg = {};            // id livello -> nome costante sfondo corrente
+let bgLibKeys = [];          // nomi costanti sfondo disponibili (built-in + caricati)
+const bgLibBase = [];        // solo i built-in (per ricostruire BG_LIBRARY)
+const customBgs = {};        // nomeCostante -> dataURL (sfondi caricati dall'utente)
+const bgImages = {};         // nomeCostante -> Image (per anteprima, inclusi i custom)
 let cur = null;              // livello corrente (voce di LEVELS)
 let camX = 0, scale = 1;
 let sel = null;              // {arr, idx, kind:'plat'|'mov'}
@@ -213,6 +223,21 @@ function parseAll(){
     if(L.tilesArrVar) tileSets[L.tilesArrVar] = extractArray(L.tilesArrVar) || [];
     if(L.tilesImgVars) L.tilesImgVars.forEach(loadImageVar);
   }
+  parseBackgrounds();
+}
+function parseBackgrounds(){
+  // mappa LEVEL_BG={1:'BG_SRC',...}
+  const m = gameSrc.match(/LEVEL_BG\s*=\s*(\{[\s\S]*?\})/);
+  if(m){ try{ levelBg = (new Function('return '+m[1]))(); }catch(e){ levelBg={}; } }
+  // chiavi della libreria BG_LIBRARY={BG_SRC,FOREST_BG_SRC,...}
+  const lib = gameSrc.match(/BG_LIBRARY\s*=\s*\{([\s\S]*?)\}/);
+  bgLibBase.length=0;
+  if(lib){ lib[1].split(',').forEach(s=>{ const k=s.trim().split(':')[0].trim(); if(k) bgLibBase.push(k); }); }
+  // default se mancano
+  if(!Object.keys(levelBg).length) LEVELS.forEach(L=> levelBg[L.id]=L.bgVar);
+  if(!bgLibBase.length) LEVELS.forEach(L=> bgLibBase.push(L.bgVar));
+  bgLibKeys = [...bgLibBase];
+  bgLibKeys.forEach(loadImageVar);   // anteprime
 }
 
 /* ════════ trasformazioni coord ════════ */
@@ -247,10 +272,11 @@ function draw(){
   const L = cur;
   ctx.clearRect(0,0,cv.width,cv.height);
 
-  // sfondo affiancato
-  const bg = images[L.bgVar];
+  // sfondo affiancato (secondo la mappatura corrente, anche se cambiato/caricato)
+  const bgName = levelBg[L.id] || L.bgVar;
+  const bg = bgImages[bgName] || images[bgName];
   if(bg && bg.complete && bg.naturalWidth){
-    const bw = (L.bgW || bg.naturalWidth) * scale;
+    const bw = ((bgName===L.bgVar && L.bgW) ? L.bgW : bg.naturalWidth) * scale;
     const bh = L.stageH * scale;
     let start = -((camX*scale) % bw);
     if(start>0) start -= bw;
@@ -542,10 +568,34 @@ $('btnZoomIn').onclick  = ()=>{ scale=Math.min(4, scale*1.25); camX=clampCam(cam
 $('btnZoomOut').onclick = ()=>{ scale=Math.max(.02, scale/1.25); camX=clampCam(camX); draw(); };
 $('btnZoomFit').onclick = fitWidth;
 
+/* ════════ sfondi ════════ */
+const BG_NAMES = {BG_SRC:'Broccoli (L1)',FOREST_BG_SRC:'Foresta (L2)',CITY_BG_SRC:'Città (L3)',UNDERWATER_BG_SRC:'Sottomarino (L4)'};
+function bgLabel(name){ return BG_NAMES[name] || (customBgs[name] ? 'Caricato: '+name.replace(/^CUSTOM_BG_|_SRC$/g,'') : name); }
+function populateBgSelect(){
+  const s=$('bgSel'); s.innerHTML='';
+  bgLibKeys.forEach(name=>{ const o=document.createElement('option'); o.value=name; o.textContent=bgLabel(name); s.appendChild(o); });
+  s.value = levelBg[cur.id] || cur.bgVar;
+}
+$('bgSel').onchange = e=>{ levelBg[cur.id]=e.target.value; if(!bgImages[e.target.value]&&!images[e.target.value]) loadImageVar(e.target.value); draw(); setStatus('Sfondo livello '+cur.id+' → '+bgLabel(e.target.value)); };
+$('bgUpload').onclick = ()=> $('bgFile').click();
+$('bgFile').onchange = e=>{
+  const f=e.target.files[0]; if(!f) return;
+  const rd=new FileReader();
+  rd.onload=()=>{
+    const name='CUSTOM_BG_'+Date.now().toString().slice(-6)+'_SRC';
+    customBgs[name]=rd.result;
+    const img=new Image(); img.onload=draw; img.src=rd.result; bgImages[name]=img;
+    bgLibKeys.push(name); levelBg[cur.id]=name; populateBgSelect(); $('bgSel').value=name; draw();
+    setStatus('Sfondo caricato e assegnato al livello '+cur.id+'. Premi Salva per renderlo permanente.');
+  };
+  rd.readAsDataURL(f); e.target.value='';
+};
+
 /* ════════ cambio livello ════════ */
 function selectLevel(idx){
   cur = LEVELS[idx];
   sel = null; camX = 0;
+  populateBgSelect();
   fitHeight();   // vista ad altezza piena (side-scroller): piattaforme grandi e ben visibili
   const isRect = cur.collision==='rect';
   const note = $('lvlNote');
@@ -584,6 +634,18 @@ function buildUpdatedSrc(){
       out = out.replace(re, serializeArray(v, data[v]));
     }
   }
+  // ── sfondi ──
+  // incorpora le costanti dei nuovi sfondi caricati (prima di BG_LIBRARY)
+  const newNames = Object.keys(customBgs).filter(n=> !out.includes('const '+n+'='));
+  if(newNames.length){
+    const consts = newNames.map(n=>'const '+n+'="'+customBgs[n]+'";').join('\n');
+    out = out.replace(/const\s+BG_LIBRARY\s*=/, consts+'\nconst BG_LIBRARY=');
+  }
+  // ricostruisci la libreria con tutte le chiavi e riscrivi la mappatura per livello
+  const allKeys = [...bgLibBase, ...Object.keys(customBgs)];
+  out = out.replace(/const\s+BG_LIBRARY\s*=\s*\{[\s\S]*?\}/, 'const BG_LIBRARY={'+allKeys.join(',')+'}');
+  const lb = '{'+Object.keys(levelBg).map(k=>k+":'"+levelBg[k]+"'").join(',')+'}';
+  out = out.replace(/LEVEL_BG\s*=\s*\{[\s\S]*?\}/, 'LEVEL_BG='+lb);
   return out;
 }
 $('btnDownload').onclick = ()=>{
