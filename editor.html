@@ -381,8 +381,13 @@ function draw(){
       const t = tiles[(p.tile!=null?p.tile:i)%tiles.length];
       const tImg = tileImgFor(t);
       if(tImg && tImg.complete && tImg.naturalWidth){
-        const sc = r.w / t.sw, dh = t.sh*sc;
-        ctx.drawImage(tImg, t.sx,t.sy,t.sw,t.sh, W2S_X(r.x), W2S_Y(r.y), r.w*scale, dh*scale);
+        if(p.h!=null){
+          // piattaforma grafica: il disegno riempie il box (resize libero, WYSIWYG)
+          ctx.drawImage(tImg, t.sx,t.sy,t.sw,t.sh, W2S_X(r.x), W2S_Y(r.y), r.w*scale, r.h*scale);
+        } else {
+          const sc = r.w / t.sw, dh = t.sh*sc;
+          ctx.drawImage(tImg, t.sx,t.sy,t.sw,t.sh, W2S_X(r.x), W2S_Y(r.y), r.w*scale, dh*scale);
+        }
       }
     }
     drawBox(r, isSel ? 'rgba(61,169,252,.35)' : (float?'rgba(120,220,150,.30)':'rgba(70,196,110,.22)'),
@@ -554,11 +559,11 @@ window.addEventListener('mousemove', e=>{
     o[yk] = sn(Math.max(0, (base[yk]!=null?base[yk]:base.y)+dy));
     if(sel.kind==='mov' && yk==='baseY') o.y = o.baseY;
   } else if(dragMode==='resizeW'){
-    o.w = sn(Math.max(8, base.w+dx)); lockAspectFromW(o);   // se ha un tile, mantiene le proporzioni
+    o.w = sn(Math.max(8, base.w+dx));      // resize libero: larghezza e altezza indipendenti
   } else if(dragMode==='resizeH'){
-    o.h = sn(Math.max(8, baseH + dy)); lockAspectFromH(o);
+    o.h = sn(Math.max(8, baseH + dy));
   } else if(dragMode==='resizeWH'){
-    o.w = sn(Math.max(8, base.w+dx)); o.h = sn(Math.max(8, baseH + dy)); lockAspectFromW(o);
+    o.w = sn(Math.max(8, base.w+dx)); o.h = sn(Math.max(8, baseH + dy));
   }
   refreshSel(); draw();
 });
@@ -730,7 +735,7 @@ $('btnZoomOut').onclick = ()=>{ scale=Math.max(.02, scale/1.25); camX=clampCam(c
 $('btnZoomFit').onclick = fitWidth;
 
 /* ════════ sfondi ════════ */
-const BG_NAMES = {BG_SRC:'Broccoli (L1)',FOREST_BG_SRC:'Foresta (L2)',CITY_BG_SRC:'Città (L3)',UNDERWATER_BG_SRC:'Sottomarino (L4)'};
+const BG_NAMES = {BG_SRC:'🖼 Sfondo Broccoli',FOREST_BG_SRC:'🖼 Sfondo Foresta',CITY_BG_SRC:'🖼 Sfondo Città',UNDERWATER_BG_SRC:'🖼 Sfondo Sottomarino'};
 function bgLabel(name){ return BG_NAMES[name] || (customBgs[name] ? 'Caricato: '+name.replace(/^CUSTOM_BG_|_SRC$/g,'') : name); }
 function populateBgSelect(){
   const s=$('bgSel'); s.innerHTML='';
@@ -755,6 +760,7 @@ $('bgFile').onchange = e=>{
 /* ════════ cambio livello ════════ */
 function selectLevel(idx){
   cur = LEVELS[idx];
+  $('levelSel').value = idx;
   sel = null; camX = 0;
   populateBgSelect();
   $('enemyTypesBox').style.display = cur.enemiesVar ? 'block' : 'none';
