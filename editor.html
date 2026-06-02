@@ -47,6 +47,7 @@
   <div class="sep"></div>
   <button id="btnAdd">+ Piattaforma</button>
   <button id="btnAddMov" title="Aggiunge una piattaforma mobile">+ Mobile</button>
+  <button id="btnAddEnemy" title="Aggiunge un nemico (solo L4)">+ Nemico</button>
   <button id="btnDel" class="del">Elimina</button>
   <div class="sep"></div>
   <button id="btnZoomOut">−</button>
@@ -97,6 +98,17 @@
       <h2>Grafica piattaforma (tile)</h2>
       <div class="hint" style="margin-bottom:6px">Clicca un disegno per assegnarlo alla piattaforma selezionata.</div>
       <div id="tileGrid" style="display:grid;grid-template-columns:repeat(4,1fr);gap:5px"></div>
+    </div>
+
+    <div id="enemyBox" style="display:none">
+      <h2>Nemico</h2>
+      <div class="row"><label>Tipo</label><select id="eType" style="width:100%"><option value="shark">Squalo 🦈</option><option value="octopus">Polpo 🐙</option></select></div>
+      <div class="row"><label>X</label><input type="number" id="eX"></div>
+      <div class="row"><label>Y</label><input type="number" id="eY"></div>
+      <div class="row"><label title="Ampiezza pattuglia orizzontale">Raggio</label><input type="number" id="eRange"></div>
+      <div class="row"><label title="Velocità di nuoto">Veloc.</label><input type="number" id="eSpeed" step="0.1"></div>
+      <div class="row"><label title="Ampiezza oscillazione verticale">Oscill.</label><input type="number" id="eBob"></div>
+      <button id="eDel" class="del" style="width:100%;margin-top:10px">🗑 Elimina nemico</button>
     </div>
 
     <h2>Comandi</h2>
@@ -153,8 +165,10 @@ const LEVELS = [
     platsVar:'RAW_PLATS_L4', fields:['x','y','w'], floorH:true, movVar:null,
     bgVar:'UNDERWATER_BG_SRC', bgW:null, stageVar:null,
     stageDraw:null, collision:'rect',
-    tilesArrVar:'L4_TILES', tilesImgVars:['TILES_ACQUA1_SRC','TILES_ACQUA2_SRC'] },
+    tilesArrVar:'L4_TILES', tilesImgVars:['TILES_ACQUA1_SRC','TILES_ACQUA2_SRC'],
+    enemiesVar:'ENEMIES_L4', enemyTypes:['shark','octopus'] },
 ];
+const ENEMY_SIZE = { shark:{w:50,h:38,icon:'🦈'}, octopus:{w:36,h:44,icon:'🐙'} };
 
 /* ─── stato ─── */
 let gameSrc = '';            // testo completo di livia_game.html
@@ -222,6 +236,7 @@ function parseAll(){
     loadImageVar(L.stageVar);
     if(L.tilesArrVar) tileSets[L.tilesArrVar] = extractArray(L.tilesArrVar) || [];
     if(L.tilesImgVars) L.tilesImgVars.forEach(loadImageVar);
+    if(L.enemiesVar) data[L.enemiesVar] = extractArray(L.enemiesVar) || [];
   }
   parseBackgrounds();
 }
@@ -341,6 +356,32 @@ function draw(){
     });
   }
 
+  // nemici (autoriali)
+  if(L.enemiesVar){
+    const ens = data[L.enemiesVar] || [];
+    ens.forEach((e,i)=>{
+      const sz = ENEMY_SIZE[e.type] || ENEMY_SIZE.shark;
+      const range = e.range!=null?e.range:600, sx = e.x - range/2;
+      const bob = e.bob!=null?e.bob:25;
+      const cyW = sz.h/2;
+      const isSel = sel && sel.kind==='enemy' && sel.idx===i;
+      // linea di pattuglia orizzontale
+      ctx.strokeStyle='rgba(255,120,120,.6)'; ctx.setLineDash([6,4]);
+      ctx.beginPath(); ctx.moveTo(W2S_X(sx),W2S_Y(e.y+cyW)); ctx.lineTo(W2S_X(sx+range),W2S_Y(e.y+cyW)); ctx.stroke();
+      // range di oscillazione verticale
+      ctx.strokeStyle='rgba(120,180,255,.5)';
+      ctx.strokeRect(W2S_X(e.x), W2S_Y(e.y-bob), sz.w*scale, (sz.h+2*bob)*scale);
+      ctx.setLineDash([]);
+      // marker
+      ctx.fillStyle = isSel?'rgba(61,169,252,.65)':(e.type==='octopus'?'rgba(180,90,220,.6)':'rgba(230,90,90,.6)');
+      ctx.fillRect(W2S_X(e.x), W2S_Y(e.y), sz.w*scale, sz.h*scale);
+      ctx.strokeStyle = isSel?'#3da9fc':'#fff'; ctx.lineWidth=isSel?2:1;
+      ctx.strokeRect(W2S_X(e.x), W2S_Y(e.y), sz.w*scale, sz.h*scale);
+      if(scale>0.3){ ctx.font=Math.max(10,sz.h*scale*0.6)+'px sans-serif';
+        ctx.fillText(sz.icon, W2S_X(e.x)+2, W2S_Y(e.y)+sz.h*scale*0.75); }
+    });
+  }
+
   // bandierina (calcolata: ultima piattaforma)
   const g = goalOf(L);
   if(g){
@@ -375,6 +416,14 @@ function drawBox(r, fill, stroke, sel){
 /* ════════ hit-testing ════════ */
 function hit(wx, wy){
   const L = cur;
+  // nemici in cima a tutto
+  if(L.enemiesVar){
+    const ens = data[L.enemiesVar]||[];
+    for(let i=ens.length-1;i>=0;i--){
+      const e=ens[i], sz=ENEMY_SIZE[e.type]||ENEMY_SIZE.shark;
+      if(wx>=e.x&&wx<=e.x+sz.w&&wy>=e.y&&wy<=e.y+sz.h) return {kind:'enemy',idx:i};
+    }
+  }
   // mobili sopra le solide
   if(L.movVar){
     const mv = data[L.movVar]||[];
@@ -390,13 +439,16 @@ function hit(wx, wy){
   }
   return null;
 }
-function selObj(){
+function selArr(){
   if(!sel) return null;
-  const arr = sel.kind==='mov' ? data[cur.movVar] : data[cur.platsVar];
-  return arr ? arr[sel.idx] : null;
+  if(sel.kind==='enemy') return data[cur.enemiesVar];
+  if(sel.kind==='mov')   return data[cur.movVar];
+  return data[cur.platsVar];
 }
+function selObj(){ const a=selArr(); return a ? a[sel.idx] : null; }
 function handleZone(wx,wy){      // su quale handle dell'elemento selezionato?
   const o = selObj(); if(!o) return null;
+  if(sel.kind==='enemy') return null;   // i nemici non si ridimensionano
   let r;
   if(sel.kind==='mov'){ const y=(o.baseY!=null?o.baseY:o.y); r={x:o.x,y,w:o.w,h:(o.h!=null?o.h:20)}; }
   else r = platRect(cur,o);
@@ -478,9 +530,20 @@ function clampCam(c){
 /* ════════ pannello selezione ════════ */
 function refreshSel(){
   const o = selObj();
+  const isEnemy = o && sel.kind==='enemy';
   $('selEmpty').style.display = o? 'none':'block';
-  $('selFields').style.display = o? 'block':'none';
-  if(!o) return;
+  $('selFields').style.display = (o && !isEnemy)? 'block':'none';
+  $('enemyBox').style.display = isEnemy? 'block':'none';
+  if(!o){ $('tileBox').style.display='none'; return; }
+  if(isEnemy){
+    $('eType').value = o.type||'shark';
+    $('eX').value=o.x; $('eY').value=o.y;
+    $('eRange').value = o.range!=null?o.range:600;
+    $('eSpeed').value = o.speed!=null?o.speed:1.2;
+    $('eBob').value   = o.bob!=null?o.bob:25;
+    $('tileBox').style.display='none';
+    return;
+  }
   $('fX').value = o.x;
   const yk = (sel.kind==='mov' && o.baseY!=null)?'baseY':'y';
   $('fY').value = o[yk];
@@ -524,6 +587,16 @@ function buildTilePicker(){
     draw();
   });
 });
+['eType','eX','eY','eRange','eSpeed','eBob'].forEach(id=>{
+  $(id).addEventListener('input', ()=>{
+    const o = selObj(); if(!o || sel.kind!=='enemy') return;
+    if(id==='eType') o.type=$(id).value;
+    else { const v=parseFloat($(id).value)||0;
+      if(id==='eX')o.x=v; if(id==='eY')o.y=v; if(id==='eRange')o.range=v; if(id==='eSpeed')o.speed=v; if(id==='eBob')o.bob=v; }
+    draw();
+  });
+});
+document.addEventListener('click', e=>{ if(e.target && e.target.id==='eDel') delSel(); });
 
 /* ════════ aggiungi / elimina / duplica ════════ */
 $('btnAdd').onclick = ()=>{
@@ -544,14 +617,21 @@ $('btnAddMov').onclick = ()=>{
 };
 $('btnDel').onclick = delSel;
 document.addEventListener('click', e=>{ if(e.target && e.target.id==='fDel') delSel(); });
+$('btnAddEnemy').onclick = ()=>{
+  if(!cur.enemiesVar){ setStatus('Questo livello non supporta nemici editabili.'); return; }
+  const arr = data[cur.enemiesVar];
+  const x = Math.round(camX + (cv.width/scale)/2);
+  arr.push({type:'shark', x, y:Math.round(cur.stageH*0.4), range:600, speed:1.2, bob:30});
+  sel={kind:'enemy',idx:arr.length-1}; refreshSel(); draw();
+};
 function delSel(){
   if(!sel) return;
-  const arr = sel.kind==='mov'?data[cur.movVar]:data[cur.platsVar];
-  arr.splice(sel.idx,1); sel=null; refreshSel(); draw();
+  const arr = selArr(); if(arr) arr.splice(sel.idx,1);
+  sel=null; refreshSel(); draw();
 }
 function dupSel(){
   const o = selObj(); if(!o) return;
-  const arr = sel.kind==='mov'?data[cur.movVar]:data[cur.platsVar];
+  const arr = selArr();
   const c = {...o}; c.x += 40; if(c.id) c.id='m'+Date.now().toString().slice(-5);
   arr.push(c); sel={kind:sel.kind,idx:arr.length-1}; refreshSel(); draw();
 }
@@ -623,14 +703,15 @@ function updateExport(){
   if(!cur) return;
   let txt = serializeArray(cur.platsVar, data[cur.platsVar]||[]) + ';';
   if(cur.movVar) txt += '\n\n'+serializeArray(cur.movVar, data[cur.movVar]||[]) + ';';
+  if(cur.enemiesVar) txt += '\n\n'+serializeArray(cur.enemiesVar, data[cur.enemiesVar]||[]) + ';';
   $('export').value = txt;
 }
 function buildUpdatedSrc(){
   let out = gameSrc;
   for(const L of LEVELS){
-    for(const v of [L.platsVar, L.movVar]){
+    for(const v of [L.platsVar, L.movVar, L.enemiesVar]){
       if(!v || !data[v]) continue;
-      const re = new RegExp('const\\s+'+v+'\\s*=\\s*\\[[\\s\\S]*?\\]');
+      const re = new RegExp('(?:const|let)\\s+'+v+'\\s*=\\s*\\[[\\s\\S]*?\\]');
       out = out.replace(re, serializeArray(v, data[v]));
     }
   }
