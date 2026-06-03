@@ -48,6 +48,7 @@
   <button id="btnAdd">+ Piattaforma</button>
   <button id="btnAddMov" title="Aggiunge una piattaforma mobile">+ Mobile</button>
   <button id="btnAddEnemy" title="Aggiunge un nemico del primo tipo disponibile">+ Nemico</button>
+  <button id="btnAddDonut" title="Aggiunge una ciambella">+ Ciambella</button>
   <button id="btnDel" class="del">Elimina</button>
   <div class="sep"></div>
   <button id="btnZoomOut">−</button>
@@ -87,7 +88,7 @@
       <div id="selFields" style="display:none">
         <div class="row"><label>X</label><input type="number" id="fX"></div>
         <div class="row"><label>Y</label><input type="number" id="fY"></div>
-        <div class="row"><label>W</label><input type="number" id="fW"></div>
+        <div class="row" id="rowW"><label>W</label><input type="number" id="fW"></div>
         <div class="row" id="rowH"><label>H</label><input type="number" id="fH"></div>
         <div class="row" id="rowRange"><label>Salita</label><input type="number" id="fRange"></div>
         <button id="fDel" class="del" style="width:100%;margin-top:10px">🗑 Elimina questo elemento</button>
@@ -169,24 +170,24 @@ const LEVELS = [
   { id:1, name:'Livello 1 — Broccoli', levelW:5856, stageH:422,
     platsVar:'RAW_PLATS', fields:['x','y','w','h'], floorH:false, movVar:null,
     bgVar:'BG_SRC', bgW:1520, stageVar:'STAGE_SRC',
-    stageDraw:{x:0,y:0,w:5856,h:422}, collision:'rect', enemiesVar:'ENEMIES_L1' },
+    stageDraw:{x:0,y:0,w:5856,h:422}, collision:'rect', enemiesVar:'ENEMIES_L1', donutsVar:'DONUTS_L1' },
 
   { id:2, name:'Livello 2 — Foresta', levelW:6000, stageH:370,
     platsVar:'RAW_PLATS_L2', fields:['x','y','w'], floorH:true, movVar:'MOVING_PLATS_L2',
     bgVar:'FOREST_BG_SRC', bgW:1200, stageVar:'FOREST_STAGE_SRC',
-    stageDraw:{x:0,y:50,w:6000,h:370}, collision:'bitmap', enemiesVar:'ENEMIES_L2' },
+    stageDraw:{x:0,y:50,w:6000,h:370}, collision:'bitmap', enemiesVar:'ENEMIES_L2', donutsVar:'DONUTS_L2' },
 
   { id:3, name:'Livello 3 — Città', levelW:7277, stageH:420,
     platsVar:'RAW_PLATS_L3', fields:['x','y','w'], floorH:true, movVar:'MOVING_SALI_L3',
     bgVar:'CITY_BG_SRC', bgW:688, stageVar:'CITY_STAGE_SRC',
-    stageDraw:'naturalBottom', collision:'bitmap', enemiesVar:'ENEMIES_L3' },
+    stageDraw:'naturalBottom', collision:'bitmap', enemiesVar:'ENEMIES_L3', donutsVar:'DONUTS_L3' },
 
   { id:4, name:'Livello 4 — Sottomarino', levelW:7277, stageH:420,
     platsVar:'RAW_PLATS_L4', fields:['x','y','w'], floorH:true, movVar:null,
     bgVar:'UNDERWATER_BG_SRC', bgW:null, stageVar:null,
     stageDraw:null, collision:'rect',
     tilesArrVar:'L4_TILES', tilesImgVars:['TILES_ACQUA1_SRC','TILES_ACQUA2_SRC'],
-    enemiesVar:'ENEMIES_L4', enemyTypes:['shark','octopus'] },
+    enemiesVar:'ENEMIES_L4', enemyTypes:['shark','octopus'], donutsVar:'DONUTS_L4' },
 ];
 const ENEMY_SIZE = { shark:{w:50,h:38,icon:'🦈'}, octopus:{w:36,h:44,icon:'🐙'} };
 function enemySize(type){ return ENEMY_SIZE[type] || {w:46,h:46,icon:'👾'}; }
@@ -283,6 +284,7 @@ function parseAll(){
     if(L.tilesArrVar) tileSets[L.tilesArrVar] = extractArray(L.tilesArrVar) || [];
     if(L.tilesImgVars) L.tilesImgVars.forEach(loadImageVar);
     if(L.enemiesVar) data[L.enemiesVar] = extractArray(L.enemiesVar) || [];
+    if(L.donutsVar) data[L.donutsVar] = extractArray(L.donutsVar) || [];
   }
   // Congela l'assegnazione tile: rende esplicito il disegno di ogni piattaforma,
   // così cancellandone/spostandone una NON cambiano le grafiche delle altre (niente shift di indice).
@@ -473,6 +475,19 @@ function draw(){
     });
   }
 
+  // ciambelle (collezionabili) — centrate su (x,y)
+  if(L.donutsVar){
+    const ds = data[L.donutsVar] || [];
+    ds.forEach((d,i)=>{
+      const isSel = sel && sel.kind==='donut' && sel.idx===i;
+      const sx=W2S_X(d.x), sy=W2S_Y(d.y);
+      if(isSel){ ctx.beginPath(); ctx.arc(sx,sy,Math.max(12,16*scale),0,Math.PI*2); ctx.strokeStyle='#3da9fc'; ctx.lineWidth=2.5; ctx.stroke(); }
+      ctx.font=Math.max(16,30*scale)+'px sans-serif'; ctx.textAlign='center'; ctx.textBaseline='middle';
+      ctx.fillText('🍩', sx, sy);
+      ctx.textAlign='left'; ctx.textBaseline='alphabetic';
+    });
+  }
+
   // bandierina (calcolata: ultima piattaforma)
   const g = goalOf(L);
   if(g){
@@ -507,7 +522,12 @@ function drawBox(r, fill, stroke, sel){
 /* ════════ hit-testing ════════ */
 function hit(wx, wy){
   const L = cur;
-  // nemici in cima a tutto
+  // ciambelle in cima
+  if(L.donutsVar){
+    const ds = data[L.donutsVar]||[];
+    for(let i=ds.length-1;i>=0;i--){ if(Math.hypot(wx-ds[i].x, wy-ds[i].y)<16) return {kind:'donut',idx:i}; }
+  }
+  // nemici
   if(L.enemiesVar){
     const ens = data[L.enemiesVar]||[];
     for(let i=ens.length-1;i>=0;i--){
@@ -533,13 +553,14 @@ function hit(wx, wy){
 function selArr(){
   if(!sel) return null;
   if(sel.kind==='enemy') return data[cur.enemiesVar];
+  if(sel.kind==='donut') return data[cur.donutsVar];
   if(sel.kind==='mov')   return data[cur.movVar];
   return data[cur.platsVar];
 }
 function selObj(){ const a=selArr(); return a ? a[sel.idx] : null; }
 function handleZone(wx,wy){      // su quale handle dell'elemento selezionato?
   const o = selObj(); if(!o) return null;
-  if(sel.kind==='enemy') return null;   // i nemici non si ridimensionano
+  if(sel.kind==='enemy'||sel.kind==='donut') return null;   // nemici/ciambelle non si ridimensionano
   let r;
   if(sel.kind==='mov'){ const y=(o.baseY!=null?o.baseY:o.y); r={x:o.x,y,w:o.w,h:(o.h!=null?o.h:20)}; }
   else r = platRect(cur,o);
@@ -629,12 +650,13 @@ function refreshSel(){
     $('eType').value = o.type||'shark';
     $('eX').value=o.x; $('eY').value=o.y;
   } else if(o){
+    const isDonut = sel.kind==='donut';
     $('fX').value = o.x;
     const yk = (sel.kind==='mov' && o.baseY!=null)?'baseY':'y';
     $('fY').value = o[yk];
-    $('fW').value = o.w;
-    $('rowH').style.display = 'flex';
-    $('fH').value = (o.h!=null?o.h:(cur.floorH? (cur.stageH-o.y):20));
+    $('rowW').style.display = isDonut?'none':'flex';
+    $('rowH').style.display = isDonut?'none':'flex';
+    if(!isDonut){ $('fW').value = o.w; $('fH').value = (o.h!=null?o.h:(cur.floorH? (cur.stageH-o.y):20)); }
     $('rowRange').style.display = (sel.kind==='mov' && o.range!=null)?'flex':'none';
     if(o.range!=null) $('fRange').value = o.range;
   }
@@ -808,6 +830,13 @@ $('btnAddEnemy').onclick = ()=>{
   arr.push({type:defType, x, y:Math.round(cur.stageH*0.55)});
   sel={kind:'enemy',idx:arr.length-1}; refreshSel(); draw();
 };
+$('btnAddDonut').onclick = ()=>{
+  if(!cur.donutsVar){ setStatus('Questo livello non supporta ciambelle editabili.'); return; }
+  const arr = data[cur.donutsVar];
+  const x = Math.round(camX + (cv.width/scale)/2), y = Math.round(cur.stageH*0.45);
+  arr.push({x,y}); sel={kind:'donut',idx:arr.length-1}; refreshSel(); draw();
+  setStatus('Ciambella aggiunta — trascinala dove vuoi.');
+};
 function delSel(){
   if(!sel) return;
   const arr = selArr(); if(arr) arr.splice(sel.idx,1);
@@ -917,7 +946,7 @@ function updateExport(){
 function buildUpdatedSrc(){
   let out = gameSrc;
   for(const L of LEVELS){
-    for(const v of [L.platsVar, L.movVar, L.enemiesVar]){
+    for(const v of [L.platsVar, L.movVar, L.enemiesVar, L.donutsVar]){
       if(!v || !data[v]) continue;
       const re = new RegExp('(?:const|let)\\s+'+v+'\\s*=\\s*\\[[\\s\\S]*?\\]');
       out = out.replace(re, serializeArray(v, data[v]));
