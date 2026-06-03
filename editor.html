@@ -363,7 +363,8 @@ function platRect(L, p){            // rettangolo "mondo" di una piattaforma
   return {x:p.x, y:p.y, w:p.w, h};
 }
 function curTiles(){ return cur.tilesArrVar ? (tileSets[cur.tilesArrVar]||[]) : null; }
-function tileImgFor(t){ return cur.tilesImgVars ? images[cur.tilesImgVars[t.img]] : null; }
+function paletteTiles(){ return cur.tilesArrVar ? (tileSets[cur.tilesArrVar]||[]) : (tileSets['L4_TILES']||[]); }
+function tileImgFor(t){ const names=cur.tilesImgVars||['TILES_ACQUA1_SRC','TILES_ACQUA2_SRC']; return images[names[t.img]]; }
 function tileOf(p){ const ts=curTiles(); return (ts && p.tile!=null) ? ts[p.tile] : null; }
 function lockAspectFromW(p){ const t=tileOf(p); if(t) p.h=Math.max(8,Math.round(p.w*t.sh/t.sw)); }
 function lockAspectFromH(p){ const t=tileOf(p); if(t) p.w=Math.max(8,Math.round(p.h*t.sw/t.sh)); }
@@ -452,7 +453,10 @@ function draw(){
       const y = (p.baseY!=null?p.baseY:p.y);
       const r = {x:p.x, y, w:p.w, h:(p.h!=null?p.h:20)};
       const isSel = sel && sel.kind==='mov' && sel.idx===i;
-      drawBox(r, isSel ? 'rgba(61,169,252,.45)' : 'rgba(245,166,35,.45)',
+      let drew=false;
+      if(p.tileSrc && customPlatformImg[p.tileSrc]){ const ci=customPlatformImg[p.tileSrc]; if(ci.complete&&ci.naturalWidth){ ctx.drawImage(ci, W2S_X(r.x),W2S_Y(r.y), r.w*scale, r.h*scale); drew=true; } }
+      else if(p.tile!=null){ const ts=tileSets['L4_TILES']||[]; const t=ts[p.tile]; if(t){ const tImg=images[(cur.tilesImgVars||['TILES_ACQUA1_SRC','TILES_ACQUA2_SRC'])[t.img]]; if(tImg&&tImg.complete&&tImg.naturalWidth){ ctx.drawImage(tImg,t.sx,t.sy,t.sw,t.sh, W2S_X(r.x),W2S_Y(r.y), r.w*scale, r.h*scale); drew=true; } } }
+      drawBox(r, isSel ? 'rgba(61,169,252,.45)' : (drew?'rgba(245,166,35,.18)':'rgba(245,166,35,.45)'),
                  isSel ? 'rgba(61,169,252,1)'   : 'rgba(245,166,35,1)', isSel);
       // range di salita (verso l'alto)
       if(p.range){
@@ -677,10 +681,11 @@ function tileThumb(paint, selected, title, onclick){
   c.title=title; paint(c.getContext('2d')); c.onclick=onclick; return c;
 }
 function buildTilePicker(){
-  const tiles = curTiles();
-  if(!tiles){ $('tileBox').style.display='none'; return; }
+  const tiles = paletteTiles();
+  const movSel = sel && sel.kind==='mov';
+  if((!cur.tilesArrVar && !movSel) || !tiles.length){ $('tileBox').style.display='none'; return; }
   $('tileBox').style.display='block';
-  const o = (sel&&sel.kind==='plat')?selObj():null;
+  const o = (sel&&(sel.kind==='plat'||sel.kind==='mov'))?selObj():null;
   const grid=$('tileGrid'); grid.innerHTML='';
   // disegni predefiniti (dai fogli tile)
   tiles.forEach((t,idx)=>{
@@ -700,10 +705,10 @@ function buildTilePicker(){
   });
 }
 function chooseGraphic(g){
-  if(sel && sel.kind==='plat'){          // cambia il disegno della piattaforma selezionata
+  if(sel && (sel.kind==='plat'||sel.kind==='mov')){   // assegna il disegno alla piattaforma (statica o mobile) selezionata
     const o=selObj();
-    if(g.tile!=null){ o.tile=g.tile; delete o.tileSrc; lockAspectFromW(o); }
-    else { o.tileSrc=g.tileSrc; delete o.tile; const im=customPlatformImg[g.tileSrc]; if(im&&im.naturalWidth) o.h=Math.round(o.w*im.naturalHeight/im.naturalWidth); }
+    if(g.tile!=null){ o.tile=g.tile; delete o.tileSrc; if(sel.kind==='plat')lockAspectFromW(o); }
+    else { o.tileSrc=g.tileSrc; delete o.tile; if(sel.kind==='plat'){ const im=customPlatformImg[g.tileSrc]; if(im&&im.naturalWidth) o.h=Math.round(o.w*im.naturalHeight/im.naturalWidth); } }
     refreshSel(); draw();
   } else {                                // inserisci una nuova piattaforma con questo disegno
     const arr=data[cur.platsVar];
