@@ -107,12 +107,16 @@
       <div id="enemyTypeList" class="hint"></div>
       <button id="btnNewEnemyType" style="width:100%;margin-top:6px">🆕 Nuovo tipo (con immagini)…</button>
       <div id="newEnemyForm" style="display:none;margin-top:8px;border:1px solid var(--line);border-radius:6px;padding:8px">
-        <div class="hint" style="margin-bottom:6px">Dai un nome e carica i fotogrammi per ogni stato (puoi selezionare più file insieme). Consigliato: Nuota 4, Attacca 2, Muore 1.</div>
-        <div class="row"><label>Nome</label><input type="text" id="netName" placeholder="es. medusa" style="width:100%"></div>
-        <div class="row"><label title="Animazione di nuoto/cammino (consigliati ~4 fotogrammi)">Nuota</label><input type="file" id="netWalk" accept="image/*" multiple style="width:100%"></div>
-        <div class="row"><label title="Consigliati ~2 fotogrammi">Attacca</label><input type="file" id="netAttack" accept="image/*" multiple style="width:100%"></div>
-        <div class="row"><label>Muore</label><input type="file" id="netDie" accept="image/*" multiple style="width:100%"></div>
-        <div class="row"><label title="Quasi mai usato in L4">Fermo</label><input type="file" id="netIdle" accept="image/*" multiple style="width:100%"></div>
+        <div class="hint" style="margin-bottom:6px">Carica i fotogrammi per destra (→) e sinistra (←); puoi selezionare più file insieme. Se lasci vuota una direzione, viene specchiata. Consigliato: Cammina 4, Attacca 2, Muore 1.</div>
+        <div class="row"><label>Nome</label><input type="text" id="netName" placeholder="es. ragno" style="width:100%"></div>
+        <div class="row"><label>Cammina →</label><input type="file" id="netWalkR" accept="image/*" multiple style="width:100%"></div>
+        <div class="row"><label>Cammina ←</label><input type="file" id="netWalkL" accept="image/*" multiple style="width:100%"></div>
+        <div class="row"><label>Attacca →</label><input type="file" id="netAttackR" accept="image/*" multiple style="width:100%"></div>
+        <div class="row"><label>Attacca ←</label><input type="file" id="netAttackL" accept="image/*" multiple style="width:100%"></div>
+        <div class="row"><label>Muore →</label><input type="file" id="netDieR" accept="image/*" multiple style="width:100%"></div>
+        <div class="row"><label>Muore ←</label><input type="file" id="netDieL" accept="image/*" multiple style="width:100%"></div>
+        <div class="row"><label>Fermo →</label><input type="file" id="netIdleR" accept="image/*" multiple style="width:100%"></div>
+        <div class="row"><label>Fermo ←</label><input type="file" id="netIdleL" accept="image/*" multiple style="width:100%"></div>
         <button id="netCreate" class="ok" style="width:100%;margin-top:6px">Crea tipo</button>
       </div>
     </div>
@@ -164,17 +168,17 @@ const LEVELS = [
   { id:1, name:'Livello 1 — Broccoli', levelW:5856, stageH:422,
     platsVar:'RAW_PLATS', fields:['x','y','w','h'], floorH:false, movVar:null,
     bgVar:'BG_SRC', bgW:1520, stageVar:'STAGE_SRC',
-    stageDraw:{x:0,y:0,w:5856,h:422}, collision:'rect' },
+    stageDraw:{x:0,y:0,w:5856,h:422}, collision:'rect', enemiesVar:'ENEMIES_L1' },
 
   { id:2, name:'Livello 2 — Foresta', levelW:6000, stageH:370,
     platsVar:'RAW_PLATS_L2', fields:['x','y','w'], floorH:true, movVar:'MOVING_PLATS_L2',
     bgVar:'FOREST_BG_SRC', bgW:1200, stageVar:'FOREST_STAGE_SRC',
-    stageDraw:{x:0,y:50,w:6000,h:370}, collision:'bitmap' },
+    stageDraw:{x:0,y:50,w:6000,h:370}, collision:'bitmap', enemiesVar:'ENEMIES_L2' },
 
   { id:3, name:'Livello 3 — Città', levelW:7277, stageH:420,
     platsVar:'RAW_PLATS_L3', fields:['x','y','w'], floorH:true, movVar:'MOVING_SALI_L3',
     bgVar:'CITY_BG_SRC', bgW:688, stageVar:'CITY_STAGE_SRC',
-    stageDraw:'naturalBottom', collision:'bitmap' },
+    stageDraw:'naturalBottom', collision:'bitmap', enemiesVar:'ENEMIES_L3' },
 
   { id:4, name:'Livello 4 — Sottomarino', levelW:7277, stageH:420,
     platsVar:'RAW_PLATS_L4', fields:['x','y','w'], floorH:true, movVar:null,
@@ -213,7 +217,7 @@ const $ = id => document.getElementById(id);
 
 /* ════════ PARSING di livia_game.html ════════ */
 function extractArray(name){
-  const re = new RegExp('const\\s+'+name+'\\s*=\\s*(\\[[\\s\\S]*?\\])\\s*;');
+  const re = new RegExp('(?:const|let)\\s+'+name+'\\s*=\\s*(\\[[\\s\\S]*?\\])');
   const m = gameSrc.match(re);
   if(!m) return null;
   try { return (new Function('return '+m[1]))(); }
@@ -304,19 +308,22 @@ function parseCustomEnemies(){
 }
 function loadCustomEnemyImg(name){
   const st = customEnemies[name]; if(!st) return;
+  const mk=arr=>(arr||[]).map(src=>{ const im=new Image(); im.onload=draw; im.src=src; return im; });
   customEnemyImg[name] = {};
   ['walk','idle','attack','die'].forEach(k=>{
-    let v=st[k]; if(!v){ customEnemyImg[name][k]=[]; return; }
-    if(!Array.isArray(v)) v=[v];                  // retrocompat
-    customEnemyImg[name][k]=v.map(src=>{ const im=new Image(); im.onload=draw; im.src=src; return im; });
+    let v=st[k], r=[], l=[];
+    if(v && !Array.isArray(v) && typeof v==='object'){ r=v.r||[]; l=v.l||[]; }
+    else if(Array.isArray(v)) r=v;                 // retrocompat array piatto
+    else if(typeof v==='string') r=[v];            // retrocompat stringa
+    customEnemyImg[name][k]={ r:mk(r), l:mk(l) };
   });
 }
 function firstEnemyFrame(name){
   const set=customEnemyImg[name]; if(!set)return null;
-  for(const k of ['walk','idle','attack','die']) if(set[k]&&set[k].length) return set[k][0];
+  for(const k of ['walk','idle','attack','die']){ const s=set[k]; if(s){ if(s.r&&s.r.length)return s.r[0]; if(s.l&&s.l.length)return s.l[0]; } }
   return null;
 }
-function allEnemyTypes(){ return ['shark','octopus', ...Object.keys(customEnemies)]; }
+function allEnemyTypes(){ return (cur && cur.id===4 ? ['shark','octopus'] : []).concat(Object.keys(customEnemies)); }
 function parseBackgrounds(){
   // mappa LEVEL_BG={1:'BG_SRC',...}
   const m = gameSrc.match(/LEVEL_BG\s*=\s*(\{[\s\S]*?\})/);
@@ -724,17 +731,21 @@ $('netCreate').onclick = async ()=>{
   const name=($('netName').value||'').trim().toLowerCase().replace(/[^a-z0-9_]/g,'');
   if(!name){ setStatus('Dai un nome al tipo (solo lettere/numeri).'); return; }
   const readFile=f=>new Promise(res=>{ const r=new FileReader(); r.onload=()=>res(r.result); r.readAsDataURL(f); });
-  const reads={};
+  const states={walk:{},idle:{},attack:{},die:{}};
   let totFrames=0;
-  for(const [id,key] of [['netWalk','walk'],['netIdle','idle'],['netAttack','attack'],['netDie','die']]){
+  const map=[['netWalkR','walk','r'],['netWalkL','walk','l'],['netAttackR','attack','r'],['netAttackL','attack','l'],
+             ['netDieR','die','r'],['netDieL','die','l'],['netIdleR','idle','r'],['netIdleL','idle','l']];
+  for(const [id,st,dir] of map){
     const files=[...$(id).files];
-    if(files.length){ reads[key]=await Promise.all(files.map(readFile)); totFrames+=files.length; }
+    if(files.length){ states[st][dir]=await Promise.all(files.map(readFile)); totFrames+=files.length; }
   }
   if(!totFrames){ setStatus('Carica almeno una immagine.'); return; }
+  const reads={};
+  for(const st of ['walk','idle','attack','die']){ const o=states[st]; if((o.r&&o.r.length)||(o.l&&o.l.length)) reads[st]=o; }
   customEnemies[name]=reads; loadCustomEnemyImg(name);
   populateEnemyTypeList(); populateEnemyTypeSelect();
   $('newEnemyForm').style.display='none'; $('netName').value='';
-  ['netWalk','netIdle','netAttack','netDie'].forEach(id=>$(id).value='');
+  ['netWalkR','netWalkL','netAttackR','netAttackL','netDieR','netDieL','netIdleR','netIdleL'].forEach(id=>$(id).value='');
   setStatus('Tipo "'+name+'" creato ('+totFrames+' fotogrammi). Usa "+ Nemico" per posizionarlo. Salva per renderlo permanente.');
   draw();
 };
@@ -769,8 +780,9 @@ $('btnAddEnemy').onclick = ()=>{
   if(!cur.enemiesVar){ setStatus('Questo livello non supporta nemici editabili.'); return; }
   const arr = data[cur.enemiesVar];
   const x = Math.round(camX + (cv.width/scale)/2);
-  const defType = Object.keys(customEnemies)[0] || 'shark';
-  arr.push({type:defType, x, y:Math.round(cur.stageH*0.4)});
+  const defType = Object.keys(customEnemies)[0] || (cur.id===4?'shark':null);
+  if(!defType){ setStatus('Crea prima un tipo di nemico (🆕 Nuovo tipo) con le immagini.'); return; }
+  arr.push({type:defType, x, y:Math.round(cur.stageH*0.55)});
   sel={kind:'enemy',idx:arr.length-1}; refreshSel(); draw();
 };
 function delSel(){
@@ -855,11 +867,15 @@ function serializeArray(name, arr){
   return 'const '+name+'=[\n'+body+'\n]';
 }
 function serializeCustomEnemies(){
+  const arrStr=a=>'['+(a||[]).map(u=>'"'+u+'"').join(',')+']';
   const parts = Object.keys(customEnemies).map(n=>{
     const st=customEnemies[n];
-    const inner=['walk','idle','attack','die'].filter(k=>st[k]&&st[k].length).map(k=>{
-      const arr=Array.isArray(st[k])?st[k]:[st[k]];
-      return k+':['+arr.map(u=>'"'+u+'"').join(',')+']';
+    const inner=['walk','idle','attack','die'].filter(k=>st[k]).map(k=>{
+      let o=st[k], r=[], l=[];
+      if(o && !Array.isArray(o) && typeof o==='object'){ r=o.r||[]; l=o.l||[]; }
+      else if(Array.isArray(o)) r=o;
+      const dp=[]; if(r.length)dp.push('r:'+arrStr(r)); if(l.length)dp.push('l:'+arrStr(l));
+      return k+':{'+dp.join(',')+'}';
     }).join(',');
     return JSON.stringify(n)+':{'+inner+'}';
   });
