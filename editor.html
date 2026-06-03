@@ -97,7 +97,8 @@
         <div class="row"><label>Y</label><input type="number" id="fY"></div>
         <div class="row" id="rowW"><label>W</label><input type="number" id="fW"></div>
         <div class="row" id="rowH"><label>H</label><input type="number" id="fH"></div>
-        <div class="row" id="rowRange"><label>Salita</label><input type="number" id="fRange"></div>
+        <div class="row" id="rowAxis"><label>Movim.</label><select id="fAxis" style="width:100%"><option value="v">↕ Su / Giù</option><option value="h">↔ Avanti / Indietro</option></select></div>
+        <div class="row" id="rowRange"><label id="rowRangeLbl">Salita</label><input type="number" id="fRange"></div>
         <button id="fDel" class="del" style="width:100%;margin-top:10px">🗑 Elimina questo elemento</button>
       </div>
     </div>
@@ -458,10 +459,13 @@ function draw(){
       else if(p.tile!=null){ const ts=tileSets['L4_TILES']||[]; const t=ts[p.tile]; if(t){ const tImg=images[(cur.tilesImgVars||['TILES_ACQUA1_SRC','TILES_ACQUA2_SRC'])[t.img]]; if(tImg&&tImg.complete&&tImg.naturalWidth){ ctx.drawImage(tImg,t.sx,t.sy,t.sw,t.sh, W2S_X(r.x),W2S_Y(r.y), r.w*scale, r.h*scale); drew=true; } } }
       drawBox(r, isSel ? 'rgba(61,169,252,.45)' : (drew?'rgba(245,166,35,.18)':'rgba(245,166,35,.45)'),
                  isSel ? 'rgba(61,169,252,1)'   : 'rgba(245,166,35,1)', isSel);
-      // range di salita (verso l'alto)
+      // indicatore di movimento (↕ verticale verso l'alto, ↔ orizzontale verso destra)
       if(p.range){
         ctx.strokeStyle='rgba(245,166,35,.5)'; ctx.setLineDash([4,4]);
-        ctx.strokeRect(W2S_X(p.x), W2S_Y(y-p.range), p.w*scale, (p.range+ (p.h||20))*scale);
+        if(p.axis==='h')
+          ctx.strokeRect(W2S_X(p.x), W2S_Y(y), (p.w+p.range)*scale, (p.h||20)*scale);
+        else
+          ctx.strokeRect(W2S_X(p.x), W2S_Y(y-p.range), p.w*scale, (p.range+(p.h||20))*scale);
         ctx.setLineDash([]);
       }
     });
@@ -670,7 +674,10 @@ function refreshSel(){
     $('rowW').style.display = isDonut?'none':'flex';
     $('rowH').style.display = isDonut?'none':'flex';
     if(!isDonut){ $('fW').value = o.w; $('fH').value = (o.h!=null?o.h:(cur.floorH? (cur.stageH-o.y):20)); }
-    $('rowRange').style.display = (sel.kind==='mov' && o.range!=null)?'flex':'none';
+    const isMov = sel.kind==='mov';
+    $('rowAxis').style.display = isMov?'flex':'none';
+    $('rowRange').style.display = (isMov && o.range!=null)?'flex':'none';
+    if(isMov){ $('fAxis').value = o.axis==='h'?'h':'v'; $('rowRangeLbl').textContent = o.axis==='h'?'Corsa':'Salita'; }
     if(o.range!=null) $('fRange').value = o.range;
   }
   buildTilePicker();   // libreria disegni sempre disponibile (livelli con tile)
@@ -741,6 +748,12 @@ $('platFile').onchange=e=>{
     if(id==='fRange') o.range=v;
     draw();
   });
+});
+$('fAxis').addEventListener('change', ()=>{
+  const o=selObj(); if(!o||sel.kind!=='mov') return;
+  o.axis = $('fAxis').value==='h'?'h':'v';
+  $('rowRangeLbl').textContent = o.axis==='h'?'Corsa':'Salita';
+  draw();
 });
 ['eType','eX','eY'].forEach(id=>{
   $(id).addEventListener('input', ()=>{
