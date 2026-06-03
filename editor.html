@@ -44,7 +44,7 @@
 <header>
   <h1>🛠️ Editor Livelli</h1>
   <select id="levelSel"></select>
-  <button id="btnNewLevel" title="Crea il Livello 5">➕ Nuovo livello</button>
+  <button id="btnNewLevel" title="Crea un nuovo livello">➕ Nuovo livello</button>
   <div class="sep"></div>
   <button id="btnAdd">+ Piattaforma</button>
   <button id="btnAddMov" title="Aggiunge una piattaforma mobile">+ Mobile</button>
@@ -69,6 +69,12 @@
     <div id="overlay"><div id="ovText">Caricamento di <code>livia_game.html</code>…</div></div>
   </div>
   <aside>
+    <div id="newLevelForm" style="display:none;margin-bottom:10px;border:1px solid var(--accent);border-radius:6px;padding:10px">
+      <h2 style="margin-top:0">Nuovo livello</h2>
+      <div class="row"><label>Nome</label><input type="text" id="nlName" placeholder="es. Caverna" style="width:100%"></div>
+      <div class="row"><label>Tipo</label><select id="nlType" style="width:100%"><option value="underwater">🐚 Sottomarino (nuoto, come L4)</option><option value="classic">⭐ Classico (salto, come L1)</option></select></div>
+      <div class="row" style="gap:6px"><button id="nlCreate" class="ok" style="flex:1">Crea</button><button id="nlCancel" style="flex:1">Annulla</button></div>
+    </div>
     <h2>Livello</h2>
     <div id="lvlNote" class="note"></div>
     <div class="legend" style="margin-top:8px">
@@ -208,7 +214,7 @@ const customEnemies = {};    // nome tipo -> {walk,idle,attack,die} dataURL
 const customEnemyImg = {};   // nome tipo -> {walk:Image,...} (anteprima editor)
 const customPlatforms = {};  // nome -> dataURL (disegni-piattaforma caricati)
 const customPlatformImg = {};// nome -> Image (anteprima editor)
-let level5On=false, level5Engine='underwater', level5Name='Livello 5';
+let extraLevels=[];   // livelli extra creati nell'editor
 let cur = null;              // livello corrente (voce di LEVELS)
 let camX = 0, scale = 1;
 let sel = null;              // {arr, idx, kind:'plat'|'mov'}
@@ -278,7 +284,7 @@ function loadImageVar(name){
 }
 
 function parseAll(){
-  parseLevel5(); ensureL5();
+  parseExtraLevels(); ensureExtraLevels();
   for(const L of LEVELS){
     if(L.platsVar) data[L.platsVar] = extractArray(L.platsVar) || [];
     if(L.movVar)   data[L.movVar]   = extractArray(L.movVar)   || [];
@@ -950,7 +956,7 @@ function buildUpdatedSrc(){
   let out = gameSrc;
   for(const L of LEVELS){
     for(const v of [L.platsVar, L.movVar, L.enemiesVar, L.donutsVar]){
-      if(!v || !data[v]) continue;
+      if(!v || v.charAt(0)==='_' || !data[v]) continue;
       const re = new RegExp('(?:const|let)\\s+'+v+'\\s*=\\s*\\[[\\s\\S]*?\\]');
       out = out.replace(re, serializeArray(v, data[v]));
     }
@@ -976,9 +982,7 @@ function buildUpdatedSrc(){
     const b = objLiteralBounds(out, 'CUSTOM_PLATFORM_IMG');
     if(b) out = out.slice(0,b.start) + serializeCustomPlatforms() + out.slice(b.end);
   }
-  out=out.replace(/let LEVEL5_ON=[^;]*;/, 'let LEVEL5_ON='+(level5On?'true':'false')+';');
-  out=out.replace(/let LEVEL5_ENGINE='[^']*';/, "let LEVEL5_ENGINE='"+level5Engine+"';");
-  out=out.replace(/let LEVEL5_NAME='[^']*';/, "let LEVEL5_NAME='"+(level5Name||'Livello 5').replace(/['\\]/g,'')+"';");
+  { const b=balancedBounds(out,'EXTRA_LEVELS'); if(b) out=out.slice(0,b.start)+serializeExtraLevels()+out.slice(b.end); }
   return out;
 }
 $('btnDownload').onclick = ()=>{
@@ -1025,29 +1029,40 @@ function setStatus(t){ $('status').textContent = t; }
 function populateLevelSelect(){ const sel=$('levelSel'); const keep=sel.value; sel.innerHTML='';
   LEVELS.forEach((L,i)=>{ const o=document.createElement('option'); o.value=i; o.textContent=L.name; sel.appendChild(o); });
   if(keep!=='') sel.value=keep; }
-function makeL5Entry(){ return { id:5, name:level5Name||'Livello 5', levelW:6000, stageH:420,
-  platsVar:'RAW_PLATS_L5', fields:['x','y','w'], floorH:true, movVar:null,
-  bgVar:'UNDERWATER_BG_SRC', bgW:null, stageVar:null, stageDraw:null, collision:'rect',
-  tilesArrVar:'L4_TILES', tilesImgVars:['TILES_ACQUA1_SRC','TILES_ACQUA2_SRC'],
-  enemiesVar:'ENEMIES_L5', donutsVar:'DONUTS_L5', engine:level5Engine, isL5:true }; }
-function ensureL5(){ const idx=LEVELS.findIndex(l=>l.id===5);
-  if(level5On){ const e=makeL5Entry(); if(idx<0)LEVELS.push(e); else LEVELS[idx]=e;
-    ['RAW_PLATS_L5','ENEMIES_L5','DONUTS_L5'].forEach(v=>{ if(!data[v]) data[v]=extractArray(v)||[]; }); }
-  else if(idx>=0) LEVELS.splice(idx,1);
+function balancedBounds(src,name){ const m=src.match(new RegExp('(?:const|let)\\s+'+name+'\\s*=\\s*')); if(!m)return null; let i=m.index+m[0].length; const open=src[i]; if(open!=='['&&open!=='{')return null; let d=0,inStr=false,q=''; for(let k=i;k<src.length;k++){const c=src[k]; if(inStr){if(c===q)inStr=false;continue;} if(c==='"'||c==="'"||c==='`'){inStr=true;q=c;continue;} if(c==='['||c==='{')d++; else if(c===']'||c==='}'){d--; if(d===0)return{start:i,end:k+1};}} return null; }
+function parseExtraLevels(){ const b=balancedBounds(gameSrc,'EXTRA_LEVELS'); if(b){ try{ extraLevels=(new Function('return '+gameSrc.slice(b.start,b.end)))()||[]; }catch(e){ extraLevels=[]; } } }
+function makeExtraEntry(i){ const lv=extraLevels[i], id=5+i;
+  return { id, name:lv.name||('Livello '+id), levelW:lv.levelW||6000, stageH:lv.stageH||420,
+    platsVar:'__plats'+id, fields:['x','y','w'], floorH:true, movVar:null,
+    bgVar:lv.bg||'UNDERWATER_BG_SRC', bgW:null, stageVar:null, stageDraw:null, collision:'rect',
+    tilesArrVar:'L4_TILES', tilesImgVars:['TILES_ACQUA1_SRC','TILES_ACQUA2_SRC'],
+    enemiesVar:'__enem'+id, donutsVar:'__donut'+id, engine:lv.engine||'underwater', isExtra:true, extraIdx:i }; }
+function ensureExtraLevels(){
+  for(let k=LEVELS.length-1;k>=0;k--) if(LEVELS[k].isExtra) LEVELS.splice(k,1);
+  extraLevels.forEach((lv,i)=>{ lv.plats=lv.plats||[]; lv.enemies=lv.enemies||[]; lv.donuts=lv.donuts||[];
+    const e=makeExtraEntry(i); data[e.platsVar]=lv.plats; data[e.enemiesVar]=lv.enemies; data[e.donutsVar]=lv.donuts;
+    if(levelBg[e.id]==null) levelBg[e.id]=lv.bg||'UNDERWATER_BG_SRC';
+    LEVELS.push(e); });
   populateLevelSelect(); }
-function parseLevel5(){ const on=gameSrc.match(/let LEVEL5_ON=(true|false)/); if(on)level5On=(on[1]==='true');
-  const en=gameSrc.match(/let LEVEL5_ENGINE='([^']*)'/); if(en)level5Engine=en[1];
-  const nm=gameSrc.match(/let LEVEL5_NAME='([^']*)'/); if(nm)level5Name=nm[1]; }
+function serializeObjArray(arr){ return '['+(arr||[]).map(serializeObj).join(',')+']'; }
+function serializeExtraLevels(){
+  return '['+extraLevels.map((lv,i)=>{ const id=5+i; const bg=levelBg[id]||lv.bg||'UNDERWATER_BG_SRC';
+    return '{name:'+JSON.stringify(lv.name||('Livello '+id))+',engine:'+JSON.stringify(lv.engine||'underwater')+
+      ',levelW:'+(lv.levelW||6000)+',stageH:'+(lv.stageH||420)+',bg:'+JSON.stringify(bg)+
+      ',plats:'+serializeObjArray(lv.plats)+',enemies:'+serializeObjArray(lv.enemies)+',donuts:'+serializeObjArray(lv.donuts)+'}';
+  }).join(',')+']'; }
 populateLevelSelect();
 $('levelSel').onchange = e=> selectLevel(+e.target.value);
-$('btnNewLevel').onclick = ()=>{
-  let eng=(prompt("Tipo di nuovo livello: scrivi 'sottomarino' oppure 'classico'", level5Engine==='classic'?'classico':'sottomarino')||'').toLowerCase().trim();
-  if(!eng) return;
-  level5Engine = eng.startsWith('class')?'classic':'underwater';
-  level5Name = (prompt('Nome del nuovo livello:', level5Name)||'Livello 5').trim()||'Livello 5';
-  level5On=true; ensureL5();
-  const idx=LEVELS.findIndex(l=>l.id===5); selectLevel(idx);
-  setStatus('Livello 5 creato ('+level5Engine+'). Aggiungi piattaforme/nemici/ciambelle, scegli lo sfondo, poi Salva.');
+$('btnNewLevel').onclick = ()=>{ const f=$('newLevelForm'); f.style.display=(f.style.display==='none'?'block':'none'); };
+$('nlCancel').onclick = ()=>{ $('newLevelForm').style.display='none'; };
+$('nlCreate').onclick = ()=>{
+  const name=($('nlName').value||'').trim()||('Livello '+(5+extraLevels.length));
+  const engine=$('nlType').value;
+  extraLevels.push({name,engine,levelW:6000,stageH:420,bg:engine==='underwater'?'UNDERWATER_BG_SRC':'BG_SRC',plats:[],enemies:[],donuts:[]});
+  ensureExtraLevels();
+  $('newLevelForm').style.display='none'; $('nlName').value='';
+  const idx=LEVELS.findIndex(l=>l.isExtra&&l.extraIdx===extraLevels.length-1); selectLevel(idx);
+  setStatus('Livello "'+name+'" creato ('+engine+'). Costruiscilo e premi Salva per aggiungerlo al gioco.');
 };
 
 /* ════════ avvio ════════ */
