@@ -190,6 +190,18 @@
       </div>
     </section>
 
+    <!-- MUSICA -->
+    <section class="acc collapsed" id="accMusic">
+      <div class="acc-h">🎵 Musica del livello <span class="caret">▾</span></div>
+      <div class="acc-b">
+        <div class="row"><select id="musicSel" style="width:100%"></select></div>
+        <button id="musicPlay" style="width:100%;margin-top:4px">▶︎ Ascolta</button>
+        <button id="musicUpload" style="width:100%;margin-top:4px">⬆︎ Carica nuova musica…</button>
+        <input type="file" id="musicFile" accept="audio/*" style="display:none">
+        <div class="hint" style="margin-top:6px">La musica viene incorporata <b>senza ricompressione</b> (qualità identica all'originale). Premi <b>Salva</b> per renderla permanente.</div>
+      </div>
+    </section>
+
     <!-- INFO LIVELLO -->
     <section class="acc collapsed" id="accInfo">
       <div class="acc-h">ℹ️ Info livello <span class="caret">▾</span></div>
@@ -280,6 +292,11 @@ let bgLibKeys = [];          // nomi costanti sfondo disponibili (built-in + car
 const bgLibBase = [];        // solo i built-in (per ricostruire BG_LIBRARY)
 const customBgs = {};        // nomeCostante -> dataURL (sfondi caricati dall'utente)
 const bgImages = {};         // nomeCostante -> Image (per anteprima, inclusi i custom)
+let levelMusic = {};         // id livello -> nome costante musica corrente
+let musicLibKeys = [];       // nomi costanti musica disponibili (built-in + caricati)
+const musicLibBase = [];     // solo i built-in (per ricostruire MUSIC_LIBRARY)
+const customMusic = {};      // nomeCostante -> dataURL (musica caricata dall'utente)
+let editorAudio = null;      // anteprima d'ascolto nell'editor
 const customEnemies = {};    // nome tipo -> {walk,idle,attack,die} dataURL
 const customEnemyImg = {};   // nome tipo -> {walk:Image,...} (anteprima editor)
 const customPlatforms = {};  // nome -> dataURL (disegni-piattaforma caricati)
@@ -374,9 +391,21 @@ function parseAll(){
     }
   }
   parseBackgrounds();
+  parseMusic();
   parseCustomEnemies();
   parseCustomPlatforms();
 }
+const MUSIC_NAMES={MUSIC_INTRO_SRC:'🎵 Intro / Menu',MUSIC_GAME_SRC:'🎵 Broccoli (gioco)',MUSIC_FOREST_SRC:'🎵 Foresta',MUSIC_CITY_SRC:'🎵 Città',MUSIC_WATER_SRC:'🎵 Sottomarino'};
+function musicLabel(name){ return MUSIC_NAMES[name] || (name.indexOf('CUSTOM_MUSIC_')===0 ? '🎵 '+name.replace(/^CUSTOM_MUSIC_|_SRC$/g,'').replace(/_/g,' ') : name); }
+function parseMusic(){
+  const m = gameSrc.match(/LEVEL_MUSIC\s*=\s*(\{[\s\S]*?\})/);
+  if(m){ try{ levelMusic = (new Function('return '+m[1]))(); }catch(e){ levelMusic={}; } }
+  const lib = gameSrc.match(/MUSIC_LIBRARY\s*=\s*\{([\s\S]*?)\}/);
+  musicLibBase.length=0;
+  if(lib){ lib[1].split(',').forEach(s=>{ const k=s.trim().split(':')[0].trim(); if(k) musicLibBase.push(k); }); }
+  musicLibKeys=[...musicLibBase];
+}
+function musicDataFor(name){ return customMusic[name] || extractString(name); }
 function parseCustomPlatforms(){
   const obj = extractObjLiteral('CUSTOM_PLATFORM_IMG');
   if(obj){ Object.assign(customPlatforms, obj); Object.keys(obj).forEach(loadCustomPlatformImg); }
@@ -991,12 +1020,45 @@ $('bgFile').onchange = e=>{
   rd.readAsDataURL(f); e.target.value='';
 };
 
+/* ════════ musica ════════ */
+function populateMusicSelect(){
+  const s=$('musicSel'); if(!s) return; s.innerHTML='';
+  musicLibKeys.forEach(name=>{ const o=document.createElement('option'); o.value=name; o.textContent=musicLabel(name); s.appendChild(o); });
+  s.value = levelMusic[cur.id] || 'MUSIC_GAME_SRC';
+}
+function stopMusicPreview(){ if(editorAudio){ editorAudio.pause(); editorAudio=null; } if($('musicPlay')) $('musicPlay').textContent='▶︎ Ascolta'; }
+$('musicSel').onchange = e=>{ levelMusic[cur.id]=e.target.value; stopMusicPreview(); setStatus('Musica livello '+cur.id+' → '+musicLabel(e.target.value)+'. Premi Salva.'); };
+$('musicPlay').onclick = ()=>{
+  if(editorAudio && !editorAudio.paused){ stopMusicPreview(); return; }
+  const name=$('musicSel').value, src=musicDataFor(name);
+  if(!src){ setStatus('Traccia non disponibile per l’anteprima.'); return; }
+  stopMusicPreview();
+  editorAudio=new Audio(src); editorAudio.onended=stopMusicPreview;
+  editorAudio.play().then(()=>{ $('musicPlay').textContent='⏸ Ferma'; }).catch(err=>setStatus('Anteprima non riuscita: '+err.message));
+};
+$('musicUpload').onclick = ()=> $('musicFile').click();
+$('musicFile').onchange = e=>{
+  const f=e.target.files[0]; if(!f) return;
+  let nm=(prompt('Nome per questa musica:', f.name.replace(/\.[^.]+$/,''))||'').trim().toLowerCase().replace(/[^a-z0-9]+/g,'_').replace(/^_|_$/g,'');
+  if(!nm) nm='music'+Date.now().toString().slice(-5);
+  const rd=new FileReader();
+  rd.onload=()=>{
+    const name='CUSTOM_MUSIC_'+nm+'_SRC';
+    customMusic[name]=rd.result;
+    if(!musicLibKeys.includes(name)) musicLibKeys.push(name);
+    levelMusic[cur.id]=name; populateMusicSelect(); $('musicSel').value=name;
+    setStatus('Musica "'+nm.replace(/_/g,' ')+'" caricata e assegnata al livello '+cur.id+'. Premi Salva per renderla permanente.');
+  };
+  rd.readAsDataURL(f); e.target.value='';
+};
+
 /* ════════ cambio livello ════════ */
 function selectLevel(idx){
   cur = LEVELS[idx];
   $('levelSel').value = idx;
   sel = null; camX = 0;
   populateBgSelect();
+  populateMusicSelect(); stopMusicPreview();
   $('btnAddMov').disabled = !cur.movVar;   // "+ Mobile" solo dove ci sono piattaforme mobili
   $('enemyTypesBox').style.display = cur.enemiesVar ? 'block' : 'none';
   if(cur.enemiesVar){ buildEnemyPalette(); populateEnemyTypeSelect(); }
@@ -1069,6 +1131,16 @@ function buildUpdatedSrc(){
   out = out.replace(/const\s+BG_LIBRARY\s*=\s*\{[\s\S]*?\}/, 'const BG_LIBRARY={'+allKeys.join(',')+'}');
   const lb = '{'+Object.keys(levelBg).map(k=>k+":'"+levelBg[k]+"'").join(',')+'}';
   out = out.replace(/LEVEL_BG\s*=\s*\{[\s\S]*?\}/, 'LEVEL_BG='+lb);
+  // ── musica ──
+  const newMusicNames = Object.keys(customMusic).filter(n=> !out.includes('const '+n+'='));
+  if(newMusicNames.length){
+    const consts = newMusicNames.map(n=>'const '+n+'='+JSON.stringify(customMusic[n])+';').join('\n');
+    out = out.replace(/const\s+MUSIC_LIBRARY\s*=/, consts+'\nconst MUSIC_LIBRARY=');
+  }
+  const allMusicKeys = [...musicLibBase, ...Object.keys(customMusic)];
+  out = out.replace(/const\s+MUSIC_LIBRARY\s*=\s*\{[\s\S]*?\}/, 'const MUSIC_LIBRARY={'+allMusicKeys.join(',')+'}');
+  const lm = '{'+Object.keys(levelMusic).map(k=>k+":'"+levelMusic[k]+"'").join(',')+'}';
+  out = out.replace(/LEVEL_MUSIC\s*=\s*\{[\s\S]*?\}/, 'LEVEL_MUSIC='+lm);
   // ── tipi di nemico personalizzati (immagini incorporate) ──
   if(Object.keys(customEnemies).length){
     const b = objLiteralBounds(out, 'CUSTOM_ENEMIES');
