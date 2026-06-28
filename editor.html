@@ -7,7 +7,7 @@
 <style>
   :root{ --bg:#10151c; --panel:#1b232e; --panel2:#232d3a; --line:#33414f; --txt:#e6edf3; --muted:#8aa0b3; --accent:#3da9fc; --warn:#f5a623; --ok:#46c46e; --del:#e25555; }
   *{box-sizing:border-box;}
-  body{margin:0;font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;background:var(--bg);color:var(--txt);font-size:14px;}
+  body{margin:0;font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;background:var(--bg);color:var(--txt);font-size:14px;height:100vh;display:flex;flex-direction:column;overflow:hidden;}
   header{display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:8px 12px;background:var(--panel);border-bottom:1px solid var(--line);position:sticky;top:0;z-index:10;}
   header h1{font-size:15px;margin:0 12px 0 0;font-weight:600;}
   select,button,input{font:inherit;color:var(--txt);background:var(--panel2);border:1px solid var(--line);border-radius:6px;padding:5px 9px;}
@@ -19,7 +19,7 @@
   .sep{width:1px;height:24px;background:var(--line);margin:0 4px;}
   .grow{flex:1;}
   #status{color:var(--muted);font-size:12.5px;min-width:120px;}
-  main{display:flex;height:calc(100vh - 50px);}
+  main{display:flex;flex:1;min-height:0;}
   #stage{flex:1;position:relative;overflow:hidden;background:#0a0e13;}
   canvas{display:block;background:#0a0e13;cursor:crosshair;}
   aside{width:300px;background:var(--panel);border-left:1px solid var(--line);padding:12px;overflow:auto;}
@@ -38,6 +38,32 @@
   kbd{background:var(--panel2);border:1px solid var(--line);border-bottom-width:2px;border-radius:4px;padding:1px 6px;font-family:inherit;font-size:11px;}
   #overlay{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;background:rgba(10,14,19,.85);text-align:center;padding:30px;z-index:5;}
   #overlay div{max-width:520px;line-height:1.6;}
+  button:disabled{opacity:.38;cursor:not-allowed;border-color:var(--line);}
+  button:disabled:hover{border-color:var(--line);}
+  /* pannello laterale comprimibile */
+  aside{transition:width .18s ease;}
+  aside.collapsed{width:0;padding:0;border-left:none;overflow:hidden;}
+  /* maniglia fissa per mostrare/nascondere il pannello: sempre al bordo destro */
+  #btnTogglePanel{position:fixed;top:50%;right:300px;transform:translateY(-50%);z-index:20;
+    width:24px;height:60px;padding:0;display:flex;align-items:center;justify-content:center;
+    border-radius:8px 0 0 8px;border-right:none;background:var(--panel);transition:right .18s ease;}
+  #btnTogglePanel:hover{background:var(--panel2);}
+  /* sezioni a fisarmonica */
+  .acc{border:1px solid var(--line);border-radius:8px;margin-bottom:8px;background:var(--panel2);overflow:hidden;}
+  .acc > .acc-h{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:9px 11px;cursor:pointer;font-weight:600;font-size:13px;user-select:none;}
+  .acc > .acc-h:hover{color:var(--accent);}
+  .acc > .acc-h .caret{color:var(--muted);font-size:11px;transition:transform .15s;}
+  .acc.collapsed > .acc-h .caret{transform:rotate(-90deg);}
+  .acc > .acc-b{padding:2px 11px 11px;}
+  .acc.collapsed > .acc-b{display:none;}
+  .sublabel{font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);margin:8px 0 6px;}
+  /* scrollbar del pannello sempre visibile (macOS la nasconde di default) */
+  aside{overflow-y:scroll;}
+  aside::-webkit-scrollbar{width:12px;}
+  aside::-webkit-scrollbar-track{background:var(--panel2);border-radius:6px;}
+  aside::-webkit-scrollbar-thumb{background:var(--line);border-radius:6px;border:3px solid var(--panel);}
+  aside::-webkit-scrollbar-thumb:hover{background:var(--accent);}
+  aside.collapsed{overflow:hidden;}
 </style>
 </head>
 <body>
@@ -46,15 +72,11 @@
   <select id="levelSel"></select>
   <button id="btnNewLevel" title="Crea un nuovo livello">➕ Nuovo livello</button>
   <div class="sep"></div>
-  <button id="btnAdd">+ Piattaforma</button>
-  <button id="btnAddMov" title="Aggiunge una piattaforma mobile">+ Mobile</button>
-  <button id="btnAddEnemy" title="Aggiunge un nemico del primo tipo disponibile">+ Nemico</button>
-  <button id="btnAddDonut" title="Aggiunge una ciambella">+ Ciambella</button>
-  <button id="btnDel" class="del">Elimina</button>
+  <button id="btnDel" class="del" title="Elimina l'elemento selezionato (piattaforma, mobile, nemico, ciambella)">🗑 Elimina</button>
   <div class="sep"></div>
-  <button id="btnZoomOut">−</button>
-  <button id="btnZoomFit">Adatta</button>
-  <button id="btnZoomIn">+</button>
+  <button id="btnZoomOut" title="Riduci zoom">−</button>
+  <button id="btnZoomFit" title="Adatta alla larghezza del livello">Adatta</button>
+  <button id="btnZoomIn" title="Aumenta zoom">+</button>
   <label class="hint"><input type="checkbox" id="snap" style="width:auto"> Griglia 5px</label>
   <div class="grow"></div>
   <span id="status">Caricamento…</span>
@@ -63,94 +85,140 @@
   <button id="btnSave" class="ok">💾 Salva</button>
   <button id="btnDownload">⬇︎ Scarica</button>
 </header>
+<button id="btnTogglePanel" title="Mostra/nascondi il pannello laterale">⟩</button>
 <main>
   <div id="stage">
     <canvas id="cv"></canvas>
     <div id="overlay"><div id="ovText">Caricamento di <code>livia_game.html</code>…</div></div>
   </div>
-  <aside>
-    <div id="newLevelForm" style="display:none;margin-bottom:10px;border:1px solid var(--accent);border-radius:6px;padding:10px">
-      <h2 style="margin-top:0">Nuovo livello</h2>
+  <aside id="side">
+    <!-- form "Nuovo livello" (popover comandato dal pulsante in alto) -->
+    <div id="newLevelForm" style="display:none;margin-bottom:10px;border:1px solid var(--accent);border-radius:8px;padding:10px">
+      <div class="sublabel" style="margin-top:0">Nuovo livello</div>
       <div class="row"><label>Nome</label><input type="text" id="nlName" placeholder="es. Caverna" style="width:100%"></div>
       <div class="row"><label>Tipo</label><select id="nlType" style="width:100%"><option value="underwater">🐚 Sottomarino (nuoto, come L4)</option><option value="classic">⭐ Classico (salto, come L1)</option></select></div>
       <div class="row" style="gap:6px"><button id="nlCreate" class="ok" style="flex:1">Crea</button><button id="nlCancel" style="flex:1">Annulla</button></div>
     </div>
-    <h2>Livello</h2>
-    <div id="lvlNote" class="note"></div>
-    <div class="legend" style="margin-top:8px">
-      <span><i class="sw" style="background:rgba(70,196,110,.55)"></i>Piattaforma solida</span>
-      <span><i class="sw" style="background:rgba(245,166,35,.6)"></i>Piattaforma mobile</span>
-      <span><i class="sw" style="background:rgba(61,169,252,.7)"></i>Selezionata</span>
-      <span><i class="sw" style="background:rgba(255,215,0,.8)"></i>Bandierina (auto)</span>
-    </div>
 
-    <h2>Sfondo del livello</h2>
-    <div class="row"><select id="bgSel" style="width:100%"></select></div>
-    <button id="bgUpload" style="width:100%;margin-top:4px">⬆︎ Carica nuovo sfondo…</button>
-    <input type="file" id="bgFile" accept="image/*" style="display:none">
-
-    <h2>Elemento selezionato</h2>
-    <div id="selBox">
-      <div class="hint" id="selEmpty">Nessuna selezione. Clicca una piattaforma sul canvas.</div>
-      <div id="selFields" style="display:none">
-        <div class="row"><label>X</label><input type="number" id="fX"></div>
-        <div class="row"><label>Y</label><input type="number" id="fY"></div>
-        <div class="row" id="rowW"><label>W</label><input type="number" id="fW"></div>
-        <div class="row" id="rowH"><label>H</label><input type="number" id="fH"></div>
-        <div class="row" id="rowAxis"><label>Movim.</label><select id="fAxis" style="width:100%"><option value="v">↕ Su / Giù</option><option value="h">↔ Avanti / Indietro</option></select></div>
-        <div class="row" id="rowRange"><label id="rowRangeLbl">Salita</label><input type="number" id="fRange"></div>
-        <button id="fDel" class="del" style="width:100%;margin-top:10px">🗑 Elimina questo elemento</button>
+    <!-- ELEMENTO SELEZIONATO -->
+    <section class="acc" id="accSel">
+      <div class="acc-h">✏️ Elemento selezionato <span class="caret">▾</span></div>
+      <div class="acc-b">
+        <div id="selBox">
+          <div class="hint" id="selEmpty">Nessuna selezione. Clicca una piattaforma sul canvas.</div>
+          <div id="selFields" style="display:none">
+            <div class="row"><label>X</label><input type="number" id="fX"></div>
+            <div class="row"><label>Y</label><input type="number" id="fY"></div>
+            <div class="row" id="rowW"><label>W</label><input type="number" id="fW"></div>
+            <div class="row" id="rowH"><label>H</label><input type="number" id="fH"></div>
+            <div class="row" id="rowAxis"><label>Movim.</label><select id="fAxis" style="width:100%"><option value="v">↕ Su / Giù</option><option value="h">↔ Avanti / Indietro</option></select></div>
+            <div class="row" id="rowRange"><label id="rowRangeLbl">Salita</label><input type="number" id="fRange"></div>
+            <button id="fDel" class="del" style="width:100%;margin-top:10px">🗑 Elimina questo elemento</button>
+          </div>
+        </div>
+        <div id="enemyBox" style="display:none">
+          <div class="sublabel">Nemico selezionato</div>
+          <div class="row"><label>Tipo</label><select id="eType" style="width:100%"></select></div>
+          <div class="row"><label>X</label><input type="number" id="eX"></div>
+          <div class="row"><label>Y</label><input type="number" id="eY"></div>
+          <div class="hint" style="margin-top:4px">Il movimento è casuale automatico.</div>
+          <button id="eDel" class="del" style="width:100%;margin-top:10px">🗑 Elimina nemico</button>
+        </div>
       </div>
-    </div>
+    </section>
 
-    <div id="tileBox" style="display:none">
-      <h2>Disegni piattaforma</h2>
-      <div class="hint" style="margin-bottom:6px">Clicca un disegno per <b>inserire</b> una piattaforma. Se una piattaforma è selezionata, ne <b>cambia</b> il disegno.</div>
-      <div id="tileGrid" style="display:grid;grid-template-columns:repeat(4,1fr);gap:5px"></div>
-      <button id="platUpload" style="width:100%;margin-top:6px">⬆︎ Carica disegno da file…</button>
-      <input type="file" id="platFile" accept="image/*" style="display:none">
-    </div>
-
-    <div id="enemyTypesBox" style="display:none">
-      <h2>Nemici</h2>
-      <div class="hint" style="margin-bottom:6px">Clicca un tipo per <b>aggiungere</b> un nemico (anche più volte). Sul canvas: trascina per spostare, seleziona ed Elimina.</div>
-      <div id="enemyGrid" style="display:grid;grid-template-columns:repeat(4,1fr);gap:5px;margin-bottom:6px"></div>
-      <button id="btnNewEnemyType" style="width:100%;margin-top:2px">🆕 Nuovo tipo (con immagini)…</button>
-      <div id="newEnemyForm" style="display:none;margin-top:8px;border:1px solid var(--line);border-radius:6px;padding:8px">
-        <div class="hint" style="margin-bottom:6px">Carica i fotogrammi per destra (→) e sinistra (←); puoi selezionare più file insieme. Se lasci vuota una direzione, viene specchiata. Consigliato: Cammina 4, Attacca 2, Muore 1.</div>
-        <div class="row"><label>Nome</label><input type="text" id="netName" placeholder="es. ragno" style="width:100%"></div>
-        <div class="row"><label>Cammina →</label><input type="file" id="netWalkR" accept="image/*" multiple style="width:100%"></div>
-        <div class="row"><label>Cammina ←</label><input type="file" id="netWalkL" accept="image/*" multiple style="width:100%"></div>
-        <div class="row"><label>Attacca →</label><input type="file" id="netAttackR" accept="image/*" multiple style="width:100%"></div>
-        <div class="row"><label>Attacca ←</label><input type="file" id="netAttackL" accept="image/*" multiple style="width:100%"></div>
-        <div class="row"><label>Muore →</label><input type="file" id="netDieR" accept="image/*" multiple style="width:100%"></div>
-        <div class="row"><label>Muore ←</label><input type="file" id="netDieL" accept="image/*" multiple style="width:100%"></div>
-        <div class="row"><label>Fermo →</label><input type="file" id="netIdleR" accept="image/*" multiple style="width:100%"></div>
-        <div class="row"><label>Fermo ←</label><input type="file" id="netIdleL" accept="image/*" multiple style="width:100%"></div>
-        <button id="netCreate" class="ok" style="width:100%;margin-top:6px">Crea tipo</button>
+    <!-- PIATTAFORME -->
+    <section class="acc" id="accPlat">
+      <div class="acc-h">➕ Piattaforme <span class="caret">▾</span></div>
+      <div class="acc-b">
+        <div class="row" style="gap:6px">
+          <button id="btnAdd" style="flex:1" title="Aggiunge una piattaforma solida">+ Piattaforma</button>
+          <button id="btnAddMov" style="flex:1" title="Aggiunge una piattaforma mobile">+ Mobile</button>
+        </div>
+        <div id="tileBox" style="display:none">
+          <div class="sublabel">Disegni piattaforma</div>
+          <div class="hint" style="margin-bottom:6px">Clicca un disegno per <b>inserire</b> una piattaforma. Se una piattaforma è selezionata, ne <b>cambia</b> il disegno.</div>
+          <div id="tileGrid" style="display:grid;grid-template-columns:repeat(4,1fr);gap:5px"></div>
+          <button id="platUpload" style="width:100%;margin-top:6px">⬆︎ Carica disegno da file…</button>
+          <input type="file" id="platFile" accept="image/*" style="display:none">
+        </div>
       </div>
-    </div>
+    </section>
 
-    <div id="enemyBox" style="display:none">
-      <h2>Nemico selezionato</h2>
-      <div class="row"><label>Tipo</label><select id="eType" style="width:100%"></select></div>
-      <div class="row"><label>X</label><input type="number" id="eX"></div>
-      <div class="row"><label>Y</label><input type="number" id="eY"></div>
-      <div class="hint" style="margin-top:4px">Il movimento è casuale automatico.</div>
-      <button id="eDel" class="del" style="width:100%;margin-top:10px">🗑 Elimina nemico</button>
-    </div>
+    <!-- NEMICI -->
+    <section class="acc collapsed" id="accEnemy">
+      <div class="acc-h">👾 Nemici <span class="caret">▾</span></div>
+      <div class="acc-b">
+        <div id="enemyTypesBox" style="display:none">
+          <div class="hint" style="margin-bottom:6px">Clicca un tipo per <b>aggiungere</b> un nemico (anche più volte). Sul canvas: trascina per spostare, seleziona ed Elimina.</div>
+          <div id="enemyGrid" style="display:grid;grid-template-columns:repeat(4,1fr);gap:5px;margin-bottom:6px"></div>
+          <button id="btnAddEnemy" style="width:100%;margin-bottom:6px" title="Aggiunge un nemico del primo tipo disponibile">+ Aggiungi nemico</button>
+          <button id="btnNewEnemyType" style="width:100%">🆕 Nuovo tipo (con immagini)…</button>
+          <div id="newEnemyForm" style="display:none;margin-top:8px;border:1px solid var(--line);border-radius:6px;padding:8px">
+            <div class="hint" style="margin-bottom:6px">Carica i fotogrammi per destra (→) e sinistra (←); puoi selezionare più file insieme. Se lasci vuota una direzione, viene specchiata. Consigliato: Cammina 4, Attacca 2, Muore 1.</div>
+            <div class="row"><label>Nome</label><input type="text" id="netName" placeholder="es. ragno" style="width:100%"></div>
+            <div class="row"><label>Cammina →</label><input type="file" id="netWalkR" accept="image/*" multiple style="width:100%"></div>
+            <div class="row"><label>Cammina ←</label><input type="file" id="netWalkL" accept="image/*" multiple style="width:100%"></div>
+            <div class="row"><label>Attacca →</label><input type="file" id="netAttackR" accept="image/*" multiple style="width:100%"></div>
+            <div class="row"><label>Attacca ←</label><input type="file" id="netAttackL" accept="image/*" multiple style="width:100%"></div>
+            <div class="row"><label>Muore →</label><input type="file" id="netDieR" accept="image/*" multiple style="width:100%"></div>
+            <div class="row"><label>Muore ←</label><input type="file" id="netDieL" accept="image/*" multiple style="width:100%"></div>
+            <div class="row"><label>Fermo →</label><input type="file" id="netIdleR" accept="image/*" multiple style="width:100%"></div>
+            <div class="row"><label>Fermo ←</label><input type="file" id="netIdleL" accept="image/*" multiple style="width:100%"></div>
+            <button id="netCreate" class="ok" style="width:100%;margin-top:6px">Crea tipo</button>
+          </div>
+        </div>
+      </div>
+    </section>
 
-    <h2>Comandi</h2>
-    <div class="hint">
-      Trascina il corpo per <b>spostare</b> · trascina il bordo destro/inferiore per <b>ridimensionare</b> · trascina su area vuota per <b>scorrere</b> · rotella = <b>pan</b> · <kbd>Canc</kbd> elimina · <kbd>D</kbd> duplica.
-    </div>
+    <!-- CIAMBELLE -->
+    <section class="acc collapsed" id="accDonut">
+      <div class="acc-h">🍩 Ciambelle <span class="caret">▾</span></div>
+      <div class="acc-b">
+        <button id="btnAddDonut" style="width:100%" title="Aggiunge una ciambella">+ Aggiungi ciambella</button>
+        <div class="hint" style="margin-top:6px">Dopo l'aggiunta, trascinala sul canvas per posizionarla.</div>
+      </div>
+    </section>
 
-    <h2>Esporta (anteprima)</h2>
-    <textarea id="export" spellcheck="false" readonly></textarea>
-    <div class="hint" style="margin-top:6px">
-      <b>Salva</b> riscrive direttamente <code>livia_game.html</code> (serve “Apri file…” una volta, browser Chrome/Edge).
-      In alternativa <b>Scarica</b> il file aggiornato e sostituiscilo a mano.
-    </div>
+    <!-- SFONDO -->
+    <section class="acc collapsed" id="accBg">
+      <div class="acc-h">🖼 Sfondo del livello <span class="caret">▾</span></div>
+      <div class="acc-b">
+        <div class="row"><select id="bgSel" style="width:100%"></select></div>
+        <button id="bgUpload" style="width:100%;margin-top:4px">⬆︎ Carica nuovo sfondo…</button>
+        <input type="file" id="bgFile" accept="image/*" style="display:none">
+      </div>
+    </section>
+
+    <!-- INFO LIVELLO -->
+    <section class="acc collapsed" id="accInfo">
+      <div class="acc-h">ℹ️ Info livello <span class="caret">▾</span></div>
+      <div class="acc-b">
+        <div id="lvlNote" class="note"></div>
+        <div class="legend" style="margin-top:8px">
+          <span><i class="sw" style="background:rgba(70,196,110,.55)"></i>Piattaforma solida</span>
+          <span><i class="sw" style="background:rgba(245,166,35,.6)"></i>Piattaforma mobile</span>
+          <span><i class="sw" style="background:rgba(61,169,252,.7)"></i>Selezionata</span>
+          <span><i class="sw" style="background:rgba(255,215,0,.8)"></i>Bandierina (auto)</span>
+        </div>
+        <div class="sublabel" style="margin-top:12px">Comandi</div>
+        <div class="hint">
+          Trascina il corpo per <b>spostare</b> · trascina il bordo destro/inferiore per <b>ridimensionare</b> · trascina su area vuota per <b>scorrere</b> · rotella = <b>pan</b> · <kbd>Canc</kbd> elimina · <kbd>D</kbd> duplica.
+        </div>
+      </div>
+    </section>
+
+    <!-- ESPORTA -->
+    <section class="acc collapsed" id="accExport">
+      <div class="acc-h">&lt;/&gt; Esporta (anteprima) <span class="caret">▾</span></div>
+      <div class="acc-b">
+        <textarea id="export" spellcheck="false" readonly></textarea>
+        <div class="hint" style="margin-top:6px">
+          <b>Salva</b> riscrive direttamente <code>livia_game.html</code> (serve “Apri file…” una volta, browser Chrome/Edge).
+          In alternativa <b>Scarica</b> il file aggiornato e sostituiscilo a mano.
+        </div>
+      </div>
+    </section>
   </aside>
 </main>
 
@@ -197,7 +265,8 @@ const LEVELS = [
     tilesArrVar:'L4_TILES', tilesImgVars:['TILES_ACQUA1_SRC','TILES_ACQUA2_SRC'],
     enemiesVar:'ENEMIES_L4', enemyTypes:['shark','octopus'], donutsVar:'DONUTS_L4' },
 ];
-const ENEMY_SIZE = { shark:{w:50,h:38,icon:'🦈'}, octopus:{w:36,h:44,icon:'🐙'} };
+const ENEMY_SIZE = { shark:{w:50,h:38,icon:'🦈'}, octopus:{w:36,h:44,icon:'🐙'},
+  broc:{w:40,h:66,icon:'🥦'}, broccolo:{w:40,h:66,icon:'🥦'}, wolf:{w:48,h:54,icon:'🐺'}, cacca:{w:44,h:60,icon:'💩'} };
 function enemySize(type){ return ENEMY_SIZE[type] || {w:46,h:46,icon:'👾'}; }
 
 /* ─── stato ─── */
@@ -336,7 +405,14 @@ function firstEnemyFrame(name){
   for(const k of ['walk','idle','attack','die']){ const s=set[k]; if(s){ if(s.r&&s.r.length)return s.r[0]; if(s.l&&s.l.length)return s.l[0]; } }
   return null;
 }
-function allEnemyTypes(){ const uw = cur && (cur.id===4 || (cur.id===5 && cur.engine==='underwater')); return (uw?['shark','octopus']:[]).concat(Object.keys(customEnemies)); }
+function isUWLevel(L){ return L && (L.id===4 || L.engine==='underwater'); }
+function nativeTypeFor(L){ if(isUWLevel(L)) return 'shark'; return L.id===2?'wolf':L.id===3?'cacca':'broc'; }
+function builtinTypesFor(L){
+  if(isUWLevel(L)) return ['shark','octopus'];
+  const n=nativeTypeFor(L);                       // il nativo del livello per primo
+  return [n].concat(['broc','wolf','cacca'].filter(t=>t!==n));
+}
+function allEnemyTypes(){ return builtinTypesFor(cur).concat(Object.keys(customEnemies)); }
 function parseBackgrounds(){
   // mappa LEVEL_BG={1:'BG_SRC',...}
   const m = gameSrc.match(/LEVEL_BG\s*=\s*(\{[\s\S]*?\})/);
@@ -658,6 +734,7 @@ function clampCam(c){
 /* ════════ pannello selezione ════════ */
 function refreshSel(){
   const o = selObj();
+  if(o) openAcc('accSel');   // mostra le proprietà appena selezioni qualcosa
   const isEnemy = o && sel.kind==='enemy';
   $('selEmpty').style.display = o? 'none':'block';
   $('selFields').style.display = (o && !isEnemy)? 'block':'none';
@@ -766,7 +843,7 @@ $('fAxis').addEventListener('change', ()=>{
 document.addEventListener('click', e=>{ if(e.target && e.target.id==='eDel') delSel(); });
 
 /* ── tipi di nemico personalizzati ── */
-function enemyTypeLabel(t){ return t==='shark'?'Squalo 🦈':t==='octopus'?'Polpo 🐙':t+' 👾'; }
+function enemyTypeLabel(t){ return ({shark:'Squalo 🦈',octopus:'Polpo 🐙',broc:'Broccolo 🥦',broccolo:'Broccolo 🥦',wolf:'Lupo 🐺',cacca:'Cacca 💩'})[t] || (t+' 👾'); }
 function populateEnemyTypeSelect(){
   const s=$('eType'); const cur=s.value; s.innerHTML='';
   allEnemyTypes().forEach(t=>{ const o=document.createElement('option'); o.value=t; o.textContent=enemyTypeLabel(t); s.appendChild(o); });
@@ -785,7 +862,7 @@ function buildEnemyPalette(){
     const cx=c.getContext('2d');
     const im=firstEnemyFrame(t);
     if(im&&im.complete&&im.naturalWidth){ const s=Math.min(58/im.naturalWidth,38/im.naturalHeight),dw=im.naturalWidth*s,dh=im.naturalHeight*s; cx.drawImage(im,(58-dw)/2,2,dw,dh); }
-    else { cx.fillStyle='#9ab'; cx.font='20px sans-serif'; cx.textAlign='center'; cx.fillText(t==='shark'?'🦈':t==='octopus'?'🐙':'👾',29,26); }
+    else { cx.font='22px sans-serif'; cx.textAlign='center'; cx.fillText(enemySize(t).icon,29,28); }
     cx.fillStyle='rgba(255,255,255,.9)'; cx.font='8px monospace'; cx.textAlign='center'; cx.fillText(t.slice(0,9),29,44);
     c.onclick=()=>addEnemyOfType(t);
     grid.appendChild(c);
@@ -852,7 +929,7 @@ $('btnAddEnemy').onclick = ()=>{
   if(!cur.enemiesVar){ setStatus('Questo livello non supporta nemici editabili.'); return; }
   const arr = data[cur.enemiesVar];
   const x = Math.round(camX + (cv.width/scale)/2);
-  const defType = Object.keys(customEnemies)[0] || (cur.id===4?'shark':null);
+  const defType = allEnemyTypes()[0] || null;
   if(!defType){ setStatus('Crea prima un tipo di nemico (🆕 Nuovo tipo) con le immagini.'); return; }
   arr.push({type:defType, x, y:Math.round(cur.stageH*0.55)});
   sel={kind:'enemy',idx:arr.length-1}; refreshSel(); draw();
@@ -920,6 +997,7 @@ function selectLevel(idx){
   $('levelSel').value = idx;
   sel = null; camX = 0;
   populateBgSelect();
+  $('btnAddMov').disabled = !cur.movVar;   // "+ Mobile" solo dove ci sono piattaforme mobili
   $('enemyTypesBox').style.display = cur.enemiesVar ? 'block' : 'none';
   if(cur.enemiesVar){ buildEnemyPalette(); populateEnemyTypeSelect(); }
   fitHeight();   // vista ad altezza piena (side-scroller): piattaforme grandi e ben visibili
@@ -1043,6 +1121,20 @@ $('btnSave').onclick = async ()=>{
 
 function setStatus(t){ $('status').textContent = t; }
 
+/* ════════ UI: fisarmonica + pannello laterale ════════ */
+document.querySelectorAll('.acc > .acc-h').forEach(h=>{
+  h.addEventListener('click', ()=> h.parentElement.classList.toggle('collapsed'));
+});
+function openAcc(id){ const s=$(id); if(s) s.classList.remove('collapsed'); }
+function setPanel(collapsed){
+  const side=$('side'), btn=$('btnTogglePanel');
+  side.classList.toggle('collapsed', collapsed);
+  btn.textContent = collapsed ? '⟨' : '⟩';
+  btn.style.right = collapsed ? '0px' : '300px';   // resta ancorata: a filo schermo o a filo pannello
+  setTimeout(resize, 200);
+}
+$('btnTogglePanel').onclick = ()=> setPanel(!$('side').classList.contains('collapsed'));
+
 /* ════════ menu livelli ════════ */
 function populateLevelSelect(){ const sel=$('levelSel'); const keep=sel.value; sel.innerHTML='';
   LEVELS.forEach((L,i)=>{ const o=document.createElement('option'); o.value=i; o.textContent=L.name; sel.appendChild(o); });
@@ -1071,7 +1163,10 @@ function serializeExtraLevels(){
   }).join(',')+']'; }
 populateLevelSelect();
 $('levelSel').onchange = e=> selectLevel(+e.target.value);
-$('btnNewLevel').onclick = ()=>{ const f=$('newLevelForm'); f.style.display=(f.style.display==='none'?'block':'none'); };
+$('btnNewLevel').onclick = ()=>{
+  if($('side').classList.contains('collapsed')) setPanel(false);   // apri il pannello se chiuso
+  const f=$('newLevelForm'); f.style.display=(f.style.display==='none'?'block':'none');
+};
 $('nlCancel').onclick = ()=>{ $('newLevelForm').style.display='none'; };
 $('nlCreate').onclick = ()=>{
   const name=($('nlName').value||'').trim()||('Livello '+(5+extraLevels.length));
